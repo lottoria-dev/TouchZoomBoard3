@@ -56,4 +56,11 @@ C/C++ 워크로드와 외부 NuGet 패키지는 필요하지 않습니다.
 - 소스와 프로그램의 사용·재배포 조건은 [LICENSE.txt](LICENSE.txt)를 따릅니다.
 - OSI 오픈소스 라이선스가 아닌 source-available freeware입니다.
 
+---
+
+## 개발 과정의 AI 활용
+
+TouchZoomBoard3는 개발자가 직접 기획·검토·테스트했으며, 일부 코드 작성·검토 및 문서화 과정에 AI 기반 개발 도구를 활용했습니다. 최종 설계 결정과 검증 및 배포 책임은 개발자에게 있습니다.
+
+
 관련 문서: [BUILD.md](BUILD.md), [RELEASE_HANDOFF.md](RELEASE_HANDOFF.md), [DEPENDENCIES.md](DEPENDENCIES.md), [PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md)
