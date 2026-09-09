@@ -1,0 +1,63 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v3.0.2"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Validate tag and export version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          if ($version -ne '3.0.2') {
+            throw "지원하지 않는 릴리스 태그입니다: $version"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build release package
+        shell: pwsh
+        run: ./build_release.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TouchZoomBoard3-${{ steps.version.outputs.version }}-Windows-x64
+          path: |
+            dist/TouchZoomBoard3.exe
+            dist/TouchZoomBoard3_${{ steps.version.outputs.version }}_Windows_x64.zip
+            dist/TouchZoomBoard3_${{ steps.version.outputs.version }}_SHA256.txt
+          if-no-files-found: error
+
+      - name: Create GitHub Release draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $arguments = @(
+            'release', 'create', "${{ github.ref_name }}",
+            'dist/TouchZoomBoard3.exe',
+            "dist/TouchZoomBoard3_${version}_Windows_x64.zip",
+            "dist/TouchZoomBoard3_${version}_SHA256.txt",
+            '--draft', '--verify-tag',
+            '--title', "TouchZoomBoard3 $version",
+            '--notes-file', 'RELEASE_NOTES.md'
+          )
+          & gh @arguments

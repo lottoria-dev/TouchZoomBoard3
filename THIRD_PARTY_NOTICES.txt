@@ -1,0 +1,16 @@
+TouchZoomBoard3 3.0.2
+
+No third-party runtime libraries are redistributed with this application.
+
+The application calls components supplied by Microsoft Windows and the
+.NET Framework already installed on the user's computer, including the
+Windows Magnification API. Those system components remain subject to their
+respective Microsoft license terms.
+
+The application icon was generated from project-authored document and magnifier
+geometry. The code-drawn WPF vector interface artwork is also project-authored;
+no third-party icon set, emoji image, font, screenshot, or sound is included.
+
+The GitHub repository workflows reference actions/checkout, actions/upload-artifact,
+and microsoft/setup-msbuild under their MIT licenses. These build-time tools are
+not included in the TouchZoomBoard3 runtime or release ZIP.

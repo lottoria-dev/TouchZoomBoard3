@@ -1,0 +1,45 @@
+name: 버그 제보
+description: 재현 가능한 프로그램 오류를 알려주세요.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 개인정보와 수업 자료가 보이는 화면은 가린 뒤 첨부해 주세요.
+  - type: input
+    id: version
+    attributes:
+      label: TouchZoomBoard3 버전
+      placeholder: 3.0.2
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 환경
+      placeholder: Windows 11 x64, 화면 배율 150%
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: 화면과 터치 장치
+      placeholder: 노트북 1920×1080 + 전자칠판 3840×2160
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 순서
+      description: 문제가 다시 발생하도록 순서대로 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 실제 결과와 기대 결과
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 추가 환경 정보
+      description: 프로그램 확대 배율, 펜 굵기와 입력 장치를 적어 주세요. 3.0.2는 로그 파일을 만들지 않습니다.

@@ -1,0 +1,707 @@
+<script
+    src="/js/redirect.js"
+    data-app-root="/"
+    data-page-key="touchzoomboard">
+</script>
+
+<style>
+    #touchzoom-page {
+        --tz-text: #172033;
+        --tz-muted: #5f6b7a;
+        --tz-border: #d8dee8;
+        --tz-border-strong: #aeb8c8;
+        --tz-soft: #f6f8fb;
+        --tz-accent: #626873;
+        --tz-accent-dark: #454a52;
+        --tz-accent-soft: #eef0f3;
+        --tz-warn: #8a4b08;
+        --tz-warn-soft: #fff8e8;
+        color: var(--tz-text);
+        line-height: 1.65;
+    }
+
+    #touchzoom-page,
+    #touchzoom-page * {
+        box-sizing: border-box;
+    }
+
+    #touchzoom-page a {
+        color: var(--tz-accent);
+    }
+
+    #touchzoom-page h2,
+    #touchzoom-page h3,
+    #touchzoom-page h4,
+    #touchzoom-page p {
+        margin-top: 0;
+    }
+
+    #touchzoom-page .tz-header {
+        padding-bottom: 22px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--tz-border);
+    }
+
+    #touchzoom-page .tz-version {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 3px 8px;
+        border: 1px solid var(--tz-border-strong);
+        background: var(--tz-soft);
+        color: #39465b;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    #touchzoom-page .tz-header h2 {
+        margin-bottom: 7px;
+        font-size: 1.75rem;
+        line-height: 1.3;
+    }
+
+    #touchzoom-page .tz-header p {
+        margin-bottom: 0;
+        color: var(--tz-muted);
+    }
+
+    #touchzoom-page .tz-download-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 22px;
+        align-items: center;
+        padding: 18px;
+        margin-bottom: 24px;
+        border: 1px solid var(--tz-border-strong);
+        background: #fff;
+    }
+
+    #touchzoom-page .tz-download-title {
+        margin-bottom: 5px;
+        font-size: 1.08rem;
+        font-weight: 800;
+    }
+
+    #touchzoom-page .tz-download-meta {
+        margin-bottom: 10px;
+        color: var(--tz-muted);
+        font-size: 0.9rem;
+    }
+
+    #touchzoom-page .tz-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    #touchzoom-page .tz-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 8px 13px;
+        border: 1px solid var(--tz-border-strong);
+        background: #fff;
+        color: var(--tz-text);
+        font: inherit;
+        font-size: 0.88rem;
+        font-weight: 800;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    #touchzoom-page .tz-button:hover {
+        background: var(--tz-soft);
+    }
+
+    #touchzoom-page .tz-button-primary {
+        border-color: var(--tz-accent);
+        background: var(--tz-accent);
+        color: #fff;
+    }
+
+    #touchzoom-page .tz-button-primary:hover {
+        background: var(--tz-accent-dark);
+    }
+
+    #touchzoom-page .tz-download-side {
+        min-width: 165px;
+        text-align: right;
+    }
+
+    #touchzoom-page .tz-file-name {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.83rem;
+        color: #39465b;
+    }
+
+    #touchzoom-page .tz-section {
+        padding: 24px 0;
+        border-bottom: 1px solid var(--tz-border);
+    }
+
+    #touchzoom-page .tz-section:last-of-type {
+        border-bottom: 0;
+    }
+
+    #touchzoom-page .tz-section-heading {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        margin-bottom: 14px;
+    }
+
+    #touchzoom-page .tz-section-number {
+        color: var(--tz-accent);
+        font-size: 0.86rem;
+        font-weight: 900;
+    }
+
+    #touchzoom-page .tz-section h3 {
+        margin-bottom: 0;
+        font-size: 1.18rem;
+    }
+
+    #touchzoom-page .tz-lead {
+        margin: -5px 0 16px;
+        color: var(--tz-muted);
+        font-size: 0.92rem;
+    }
+
+    #touchzoom-page .tz-note {
+        padding: 13px 15px;
+        border-left: 4px solid var(--tz-accent);
+        background: var(--tz-accent-soft);
+        color: #34445c;
+        font-size: 0.9rem;
+    }
+
+    #touchzoom-page .tz-note p:last-child {
+        margin-bottom: 0;
+    }
+
+    #touchzoom-page .tz-note-warning {
+        border-left-color: #c47212;
+        background: var(--tz-warn-soft);
+        color: var(--tz-warn);
+    }
+
+    #touchzoom-page .tz-quick-use {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    #touchzoom-page .tz-step-box {
+        padding: 14px;
+        border: 1px solid var(--tz-border);
+        background: #fff;
+    }
+
+    #touchzoom-page .tz-step-number {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--tz-accent);
+        font-size: 0.78rem;
+        font-weight: 900;
+    }
+
+    #touchzoom-page .tz-step-box h4 {
+        margin-bottom: 5px;
+        font-size: 0.95rem;
+    }
+
+    #touchzoom-page .tz-step-box p {
+        margin-bottom: 0;
+        color: var(--tz-muted);
+        font-size: 0.86rem;
+    }
+
+    #touchzoom-page .tz-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--tz-border);
+    }
+
+    #touchzoom-page table {
+        width: 100%;
+        min-width: 650px;
+        border-collapse: collapse;
+    }
+
+    #touchzoom-page th,
+    #touchzoom-page td {
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--tz-border);
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.9rem;
+    }
+
+    #touchzoom-page th {
+        background: var(--tz-soft);
+        font-weight: 800;
+    }
+
+    #touchzoom-page tr:last-child td {
+        border-bottom: 0;
+    }
+
+    #touchzoom-page .tz-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    #touchzoom-page .tz-info-box {
+        padding: 15px;
+        border: 1px solid var(--tz-border);
+        background: #fff;
+    }
+
+    #touchzoom-page .tz-info-box h4 {
+        margin-bottom: 7px;
+        font-size: 0.98rem;
+    }
+
+    #touchzoom-page .tz-info-box p {
+        margin-bottom: 0;
+        color: var(--tz-muted);
+        font-size: 0.9rem;
+    }
+
+    #touchzoom-page .tz-list,
+    #touchzoom-page .tz-steps {
+        margin: 0;
+        padding-left: 1.35rem;
+    }
+
+    #touchzoom-page .tz-list li,
+    #touchzoom-page .tz-steps li {
+        margin-bottom: 8px;
+    }
+
+    #touchzoom-page .tz-list li:last-child,
+    #touchzoom-page .tz-steps li:last-child {
+        margin-bottom: 0;
+    }
+
+    #touchzoom-page kbd {
+        display: inline-block;
+        min-width: 1.8em;
+        padding: 1px 6px;
+        border: 1px solid var(--tz-border-strong);
+        border-bottom-width: 2px;
+        background: var(--tz-soft);
+        color: #26344a;
+        font-family: inherit;
+        font-size: 0.84em;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    #touchzoom-page code {
+        padding: 1px 4px;
+        background: var(--tz-soft);
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.88em;
+    }
+
+    #touchzoom-page .tz-footer {
+        margin-top: 26px;
+        padding-top: 18px;
+        border-top: 1px solid var(--tz-border);
+        color: var(--tz-muted);
+        font-size: 0.84rem;
+    }
+
+    #touchzoom-page .tz-footer p {
+        margin-bottom: 5px;
+    }
+
+    @media (max-width: 820px) {
+        #touchzoom-page .tz-quick-use {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 720px) {
+        #touchzoom-page .tz-download-panel {
+            grid-template-columns: 1fr;
+        }
+
+        #touchzoom-page .tz-download-side {
+            text-align: left;
+        }
+
+        #touchzoom-page .tz-grid,
+        #touchzoom-page .tz-quick-use {
+            grid-template-columns: 1fr;
+        }
+
+        #touchzoom-page .tz-actions {
+            display: grid;
+            grid-template-columns: 1fr;
+        }
+
+        #touchzoom-page .tz-button {
+            width: 100%;
+        }
+
+    }
+</style>
+
+<div id="touchzoom-page">
+    <header class="tz-header">
+        <span class="tz-version">Windows x64 · v3.0.2</span>
+        <h2>TouchZoomBoard3</h2>
+        <p>전자칠판 앞에서 노트북으로 돌아가지 않고 화면 확대·자료 조작·판서를 직접 사용하는 무설치형 수업 보조 프로그램입니다.</p>
+    </header>
+
+    <section class="tz-download-panel" aria-label="프로그램 다운로드">
+        <div>
+            <div class="tz-download-title">TouchZoomBoard3 3.0.2 다운로드</div>
+            <p class="tz-download-meta">Windows 10/11 x64 · .NET Framework 4.8 · 무설치형 프리웨어</p>
+
+            <div class="tz-actions">
+                <a
+                    class="tz-button tz-button-primary"
+                    href="https://github.com/lottoria-dev/TouchZoomBoard-Source/releases/download/v3.0.2/TouchZoomBoard3_3.0.2_Windows_x64.zip"
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    권장 ZIP 다운로드
+                </a>
+                <a
+                    class="tz-button"
+                    href="https://github.com/lottoria-dev/TouchZoomBoard-Source/releases/tag/v3.0.2"
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    릴리스 노트
+                </a>
+            </div>
+        </div>
+
+        <div class="tz-download-side">
+            <div class="tz-file-name">TouchZoomBoard3_3.0.2_Windows_x64.zip</div>
+            <div class="tz-file-name">Portable · 설치 프로그램 없음</div>
+        </div>
+    </section>
+
+    <div class="tz-note">
+        <p><strong>3.0.2 정식 릴리스:</strong> 필기 끝단 돌출을 완화하고, 선택한 굴절광이 패널과 버튼에 더 분명하게 보이도록 강화유리 표현을 조정했습니다. 아이콘과 글자의 체감 굵기를 낮추고 전자칠판의 도구 전환 터치 허용 범위도 보정했습니다.</p>
+    </div>
+
+    <div class="tz-note tz-note-warning">
+        <p><strong>실행 전 확인:</strong> 개인 개발자 프로그램으로 디지털 서명이 포함되어 있지 않아 Windows SmartScreen 경고가 나타날 수 있습니다.</p>
+        <p>공식 GitHub Release에서 내려받고 같은 Release에 제공되는 SHA-256 파일과 파일 이름을 함께 확인하세요.</p>
+    </div>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">01</span>
+            <h3>수업 중 빠른 사용</h3>
+        </div>
+        <p class="tz-lead">수업을 시작할 때 필요한 네 단계입니다.</p>
+
+        <div class="tz-quick-use">
+            <div class="tz-step-box">
+                <span class="tz-step-number">STEP 1</span>
+                <h4>작은 패널 열기</h4>
+                <p>프로그램을 실행한 뒤 화면의 작은 터치 패널을 눌러 전체 도구 패널을 엽니다.</p>
+            </div>
+
+            <div class="tz-step-box">
+                <span class="tz-step-number">STEP 2</span>
+                <h4>빠르게 확대</h4>
+                <p>상단 배율 버튼을 짧게 눌러 저장한 기본 배율로 확대합니다. 길게 누르면 100~500% 목록이 열립니다.</p>
+            </div>
+
+            <div class="tz-step-box">
+                <span class="tz-step-number">STEP 3</span>
+                <h4>조작·판서</h4>
+                <p>확대 화면은 바로 조작하고, 미니맵으로 확대 영역을 옮깁니다. 좌우 화살표로 필기·지우기·조작 메뉴를 전환합니다.</p>
+            </div>
+
+            <div class="tz-step-box">
+                <span class="tz-step-number">STEP 4</span>
+                <h4>수업 화면 복귀</h4>
+                <p>수업 화면 종료를 누릅니다. 화면이나 입력이 비정상적이면 Ctrl+Alt+Shift+Esc로 긴급 복구합니다.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">02</span>
+            <h3>개발 목적</h3>
+        </div>
+
+        <div class="tz-note">
+            <p>노트북과 전자칠판을 HDMI 화면 복제 및 USB Touch 케이블로 연결한 수업 환경을 중심으로 개발했습니다. 교사는 전자칠판 앞을 떠나지 않고 작은 글씨, 도형, 표와 이미지를 확대하고 자료를 조작하거나 바로 판서할 수 있습니다.</p>
+            <p>구형 연속 터치 호출 방식은 웹문서 선택 동작과 충돌할 수 있어 제거했습니다. v3.0.2는 마지막 입력 한 점이 튀어나오지 않도록 끝단 보정을 점진적으로 바꾸고, 여러 모니터에서 균일하게 보이면서 선택한 빛의 색이 분명한 투명 강화유리 패널을 제공합니다.</p>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">03</span>
+            <h3>설치와 기본 설정</h3>
+        </div>
+        <p class="tz-lead">설치 프로그램 없이 압축을 풀어 실행하는 Portable 방식입니다.</p>
+
+        <ol class="tz-steps">
+            <li><code>TouchZoomBoard3_3.0.2_Windows_x64.zip</code>을 내려받아 원하는 폴더에 완전히 압축 해제합니다.</li>
+            <li><code>TouchZoomBoard3.exe</code>를 실행합니다. 같은 폴더의 안내·라이선스 파일도 함께 보관하는 것을 권장합니다.</li>
+            <li>작업 표시줄 오른쪽 시스템 트레이와 화면 위의 작은 터치 패널을 확인합니다.</li>
+            <li>패널을 오른쪽 클릭하거나 아이콘을 길게 누른 뒤 <strong>환경 설정</strong>에서 전자칠판, 기본 배율, 패널 유리판 농도와 굴절광 색상을 지정합니다.</li>
+            <li>필요하면 <strong>Windows 시작 시 자동 실행</strong>을 켭니다.</li>
+        </ol>
+
+        <div class="tz-note" style="margin-top: 14px;">
+            <p><strong>필수 환경:</strong> Windows 10 22H2 또는 Windows 11 x64, .NET Framework 4.8 이상</p>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">04</span>
+            <h3>주요 조작 방법</h3>
+        </div>
+
+        <div class="tz-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">작업</th>
+                        <th scope="col">터치 또는 마우스</th>
+                        <th scope="col">키보드</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>전체 패널 열기·접기</td>
+                        <td>작은 패널 또는 전체 패널 상단 가운데 아이콘을 짧게 누름</td>
+                        <td>해당 없음</td>
+                    </tr>
+                    <tr>
+                        <td>빠른 확대·100% 복귀</td>
+                        <td>상단 배율 버튼을 짧게 누름. 환경 설정의 기본 배율로 확대되며, 다시 누르면 100%로 돌아감</td>
+                        <td>해당 없음</td>
+                    </tr>
+                    <tr>
+                        <td>배율 직접 선택</td>
+                        <td>상단 배율 버튼을 길게 누른 뒤 100~500% 중 선택</td>
+                        <td>해당 없음</td>
+                    </tr>
+                    <tr>
+                        <td>확대·축소</td>
+                        <td>두 손가락 핀치. 패널·미니맵에서는 마우스 휠, 자료 조작 중에는 Ctrl+휠</td>
+                        <td><kbd>Ctrl</kbd> + 마우스 휠</td>
+                    </tr>
+                    <tr>
+                        <td>확대 영역 이동</td>
+                        <td>패널에 붙은 미니맵을 누르거나 드래그. 미니맵 위치 버튼으로 패널 위·아래 전환</td>
+                        <td>해당 없음</td>
+                    </tr>
+                    <tr>
+                        <td>자료 조작·스크롤</td>
+                        <td>조작 메뉴의 자료 조작 버튼을 누른 뒤 기존 판서를 화면에 유지하면서 웹페이지·PowerPoint·GeoGebra 등을 직접 조작. 일반 휠은 문서 스크롤</td>
+                        <td>프레젠터 입력은 기존 프레젠테이션으로 전달</td>
+                    </tr>
+                    <tr>
+                        <td>필기 도구 전환</td>
+                        <td>좌우 화살표로 필기·지우기·조작 메뉴를 순환하고 펜·형광펜·모양을 선택</td>
+                        <td><kbd>Ctrl</kbd> + <kbd>Z</kbd>: 마지막 판서 되돌리기</td>
+                    </tr>
+                    <tr>
+                        <td>색상·굵기</td>
+                        <td>도구 아래 색상 막대를 눌러 16색 팔레트 호출. 펜·형광펜은 길게 눌러 굵기, 모양은 짧게 눌러 종류·길게 눌러 테두리 굵기 선택</td>
+                        <td>해당 없음</td>
+                    </tr>
+                    <tr>
+                        <td>확대·필기 종료</td>
+                        <td>수업 화면 종료 아이콘 또는 트레이 메뉴 사용. 현재 판서와 확대 세션을 함께 종료</td>
+                        <td><kbd>Esc</kbd></td>
+                    </tr>
+                    <tr>
+                        <td>긴급 화면 복구</td>
+                        <td>트레이의 긴급 화면 복구 선택</td>
+                        <td><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Esc</kbd></td>
+                    </tr>
+                    <tr>
+                        <td>환경 설정</td>
+                        <td>패널 우클릭 또는 작은 패널·상단 가운데 아이콘 길게 누르기</td>
+                        <td>해당 없음</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">05</span>
+            <h3>v3.0.2 주요 기능</h3>
+        </div>
+
+        <div class="tz-grid">
+            <div class="tz-info-box">
+                <h4>상호작용 라이브 줌</h4>
+                <p>Windows Magnification API와 화면 합성 주기 갱신을 사용합니다. 비정수 배율도 실제 원본 픽셀 크기에 맞춰 표시하고, 자료 조작 모드에서는 확대된 요소를 직접 누르거나 끌 수 있습니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>패널 결합 미니맵</h4>
+                <p>확대 중 전체 화면의 위치를 작은 저알파 미니맵으로 확인합니다. 자료 조작 중에도 기존 판서를 표시하며 패널은 이동하는 동안 포인터를 따라 계속 보입니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>밝은 투명 Liquid Glass</h4>
+                <p>컨트롤 패널은 DWM 색상판을 쓰지 않는 픽셀 단위 투명 창입니다. 0%에서는 패널판과 외곽이 사라져 버튼만 표시되고, 100%에서도 뒤 화면이 선명하게 비칩니다. 넓은 면의 대각선 그라데이션을 없애 모니터별 밴딩을 줄였습니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>파스텔 굴절광</h4>
+                <p>중성·하늘·민트·라벤더·로즈·피치 프리셋을 고르거나 Windows 색상 팔레트에서 원하는 색을 직접 지정할 수 있습니다. 선택색은 패널의 옅은 균일 표면색, 상·좌측 굴절대, 하·우측 음영과 돌출 버튼에 함께 반영됩니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>적응형 필기</h4>
+                <p>실제 입력 간격·속도·펜 굵기에 따라 떨림을 보정합니다. 마지막 패킷은 SmoothStep으로 완만하게 마무리해 획 끝이 튀어나오는 현상을 줄였습니다. 굵은 펜 지연 축소와 8px 이상 압력 노이즈 억제도 유지합니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>로그 파일 없는 정식판</h4>
+                <p>오류 로그, 필기 진단 로그 또는 사용 기록 파일을 만들지 않습니다. 화면 이미지, 문서 내용, 실제 필기 좌표와 사용 통계를 수집하거나 전송하지 않습니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>프레젠터 포커스 유지</h4>
+                <p>패널과 판서 화면이 프레젠테이션의 키보드 포커스를 가져가지 않도록 구성해 프레젠터 입력을 계속 사용할 수 있습니다.</p>
+            </div>
+
+            <div class="tz-info-box">
+                <h4>안정적인 종료와 복구</h4>
+                <p>판서 화면을 세션 종료 때 완전히 정리해 재진입 잔상을 줄였습니다. 수업 화면 종료, Ctrl+Alt+Shift+Esc와 트레이 긴급 복구를 지원합니다.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">06</span>
+            <h3>수업 활용 예시</h3>
+        </div>
+
+        <ul class="tz-list">
+            <li>교과서 PDF의 작은 수식이나 도형을 확대해 판서하며 설명할 때</li>
+            <li>GeoGebra의 점이나 웹페이지의 인터랙티브 요소를 확대 상태에서 조작할 때</li>
+            <li>PowerPoint 애니메이션이나 동영상의 특정 부분을 실시간으로 확대할 때</li>
+            <li>미니맵으로 전체 자료의 위치를 확인하면서 필요한 영역으로 빠르게 이동할 때</li>
+            <li>프레젠터로 슬라이드를 넘기면서 전자칠판 위에 강조 표시를 추가할 때</li>
+        </ul>
+
+        <div class="tz-note" style="margin-top: 14px;">
+            <p><strong>휠 조작 구분:</strong> 패널·미니맵과 화면 이동 모드의 휠은 확대·축소에 사용됩니다. 자료 조작 모드의 일반 휠은 문서 스크롤로 전달되며, <kbd>Ctrl</kbd>을 누른 채 휠을 돌리면 확대·축소됩니다.</p>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">07</span>
+            <h3>문제가 생겼을 때</h3>
+        </div>
+
+        <div class="tz-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">증상</th>
+                        <th scope="col">확인할 사항</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>패널이 보이지 않음</td>
+                        <td>시스템 트레이에서 컨트롤 패널을 켜고, 환경 설정에서 대상 화면과 패널 위치 초기화를 확인합니다.</td>
+                    </tr>
+                    <tr>
+                        <td>확대가 시작되지 않음</td>
+                        <td>상단 배율 버튼을 짧게 누르거나 길게 눌러 125% 이상을 선택합니다. Windows 확대 기능을 제한하는 전체 화면·보안 프로그램인지도 확인합니다.</td>
+                    </tr>
+                    <tr>
+                        <td>확대 중 자료를 누르거나 끌 수 없음</td>
+                        <td>조작 메뉴에서 자료 조작 버튼이 선택되어 있는지 확인합니다. 관리자 권한, 보안 화면, 일부 독점 전체 화면 프로그램은 Windows가 입력 전달을 제한할 수 있습니다.</td>
+                    </tr>
+                    <tr>
+                        <td>미니맵에서 이동되지 않음</td>
+                        <td>미니맵 안을 짧게 누르거나 표시 영역을 드래그합니다. 미니맵 위치 버튼으로 패널 위·아래 위치도 바꿀 수 있습니다.</td>
+                    </tr>
+                    <tr>
+                        <td>화면이나 입력 상태가 이상함</td>
+                        <td>수업 화면 종료 또는 Esc를 사용합니다. 해결되지 않으면 Ctrl+Alt+Shift+Esc 또는 트레이의 긴급 화면 복구를 사용합니다.</td>
+                    </tr>
+                    <tr>
+                        <td>두 손가락 핀치가 작동하지 않음</td>
+                        <td>전자칠판 드라이버에서 Windows 멀티터치가 활성화되어 있는지 확인합니다. 우선 상단 배율 메뉴 또는 패널 위 마우스 휠로 조작할 수 있습니다.</td>
+                    </tr>
+                    <tr>
+                        <td>100% 핀치 후 다시 확대되지 않음</td>
+                        <td>v3.0.2는 100% 복귀 후 60초 동안 줌 세션을 유지하므로 빠르게 다시 확대할 수 있습니다. 이후에는 자원을 회수하며 다음 확대 때 자동 재생성합니다.</td>
+                    </tr>
+                    <tr>
+                        <td>판서 재진입 때 이전 화면이 잠시 보임</td>
+                        <td>v3.0.2는 판서 오버레이를 제거한 뒤 해당 모니터를 다시 그립니다. 잔상이 계속되면 Windows 버전, DPI, 확대 배율과 재현 순서를 적어 제보합니다.</td>
+                    </tr>
+                    <tr>
+                        <td>프로그램 자체를 종료하고 싶음</td>
+                        <td>패널을 오른쪽 클릭하거나 시스템 트레이 아이콘을 오른쪽 클릭하고 TouchZoomBoard3 종료를 선택합니다.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="tz-section">
+        <div class="tz-section-heading">
+            <span class="tz-section-number">08</span>
+            <h3>파일 확인과 공개 정보</h3>
+        </div>
+
+        <p class="tz-lead">배포 ZIP과 실행 파일의 SHA-256 값은 공식 GitHub Release에 별도 파일로 제공합니다.</p>
+
+        <div class="tz-actions">
+            <a
+                class="tz-button"
+                href="https://github.com/lottoria-dev/TouchZoomBoard-Source/releases/download/v3.0.2/TouchZoomBoard3_3.0.2_SHA256.txt"
+                target="_blank"
+                rel="noopener noreferrer">
+                SHA-256 확인 파일
+            </a>
+            <a
+                class="tz-button"
+                href="https://github.com/lottoria-dev/TouchZoomBoard-Source"
+                target="_blank"
+                rel="noopener noreferrer">
+                GitHub 소스 보기
+            </a>
+        </div>
+
+        <div class="tz-note tz-note-warning" style="margin-top: 14px;">
+            <p><strong>Windows SmartScreen 안내:</strong> 서명되지 않은 실행 파일에 경고가 표시되는 것은 파일이 자동으로 안전하거나 위험하다는 뜻이 아닙니다. 공식 Release 주소, 파일 이름과 SHA-256 값을 함께 확인하세요.</p>
+        </div>
+
+        <div class="tz-note" style="margin-top: 14px;">
+            <p><strong>배포 및 개인정보:</strong> 외부 런타임 패키지나 C/C++ 라이브러리 설치가 필요하지 않습니다. 화면 내용, 사용자 자료와 사용 통계를 수집하거나 전송하지 않으며 로그 파일도 만들지 않습니다.</p>
+            <p>프로그램은 무료로 사용할 수 있는 source-available freeware입니다. OSI 오픈소스 라이선스는 아니며, 사용·수정·재배포 조건은 저장소의 <code>LICENSE.txt</code>를 따릅니다.</p>
+        </div>
+    </section>
+
+    <footer class="tz-footer">
+        <p><strong>버전:</strong> 3.0.2</p>
+        <p><strong>최종 업데이트:</strong> 2026.09.08.</p>
+        <p><strong>개발자:</strong> lottoria-dev</p>
+        <p><strong>문의:</strong> <a href="mailto:mathtime.ai@gmail.com">mathtime.ai@gmail.com</a></p>
+        <p>사용자 자료와 사용 통계를 수집하지 않으며 프로그램 기능을 위해 인터넷 연결을 사용하지 않습니다.</p>
+        <p>소스 공개형 프리웨어이며 사용·수정·재배포 조건은 GitHub 저장소의 LICENSE.txt를 따릅니다.</p>
+        <p>Copyright 2026 lottoria-dev. All rights reserved.</p>
+    </footer>
+</div>
