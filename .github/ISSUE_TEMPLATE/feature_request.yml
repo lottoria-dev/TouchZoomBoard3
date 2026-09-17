@@ -1,0 +1,30 @@
+name: 기능 제안
+description: 수업 흐름을 개선할 기능을 제안해 주세요.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: classroom_problem
+    attributes:
+      label: 수업 중 불편한 상황
+      description: 어떤 수업 장면에서 문제가 생기는지 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안 기능
+      description: 전자칠판에서 몇 번의 조작으로 사용할 수 있어야 하는지도 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 현재 사용 중인 대안
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 확인
+      options:
+        - label: 이 기능이 수업 자료를 과도하게 가리거나 조작을 복잡하게 만들지 않는지 검토했습니다.
+          required: true

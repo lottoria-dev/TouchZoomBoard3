@@ -1,0 +1,20 @@
+.vs/
+bin/
+obj/
+dist/
+*.user
+*.suo
+*.pdb
+
+# Local development records and website sources
+/CHANGELOG.md
+/DEVELOPMENT_NOTES.md
+/RELEASE_HANDOFF.md
+/RELEASE_GUIDE.md
+/VALIDATION_GUIDE.md
+/docs/release/
+/web/
+/tests/verify_source.py
+/TouchZoomBoard3_Development_Roadmap.md
+*.log
+*.zip
