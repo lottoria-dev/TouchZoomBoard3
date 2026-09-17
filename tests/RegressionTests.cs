@@ -282,7 +282,16 @@ namespace TouchZoomBoard
         {
             window.SetMode(AppMode.Eraser);
             var canvas = Field<AdaptiveInkCanvas>(window, "inkCanvas");
-            var args = new InkCanvasStrokeErasingEventArgs(stroke) { Cancel = cancel };
+            // WPF exposes no public constructor for these event arguments.
+            // Create them only in this test harness, then exercise the real
+            // StrokeErasing/StrokeErased handlers, including cancellation.
+            var constructor = typeof(InkCanvasStrokeErasingEventArgs).GetConstructor(
+                PrivateInstance | BindingFlags.Public, null, new[] { typeof(Stroke) }, null);
+            if (constructor == null)
+                throw new InvalidOperationException(
+                    "This WPF runtime does not expose the expected stroke-erasing test constructor.");
+            var args = (InkCanvasStrokeErasingEventArgs)constructor.Invoke(new object[] { stroke });
+            args.Cancel = cancel;
             typeof(InkCanvas).GetMethod("OnStrokeErasing", PrivateInstance).Invoke(canvas, new object[] { args });
             if (args.Cancel) return;
             canvas.Strokes.Remove(stroke);
