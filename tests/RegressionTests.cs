@@ -44,6 +44,16 @@ namespace TouchZoomBoard
                 Run("Circle drag keeps center and radius in every direction", CircleDragGeometry);
                 Run("Circle cancellation and small taps leave no undo entries", CircleCancellation);
                 Run("Circle selection and shared shape style remain connected", CircleSelectionAndStyle);
+                Run("Color tool selection defaults to line and remembers each shape", ColorSelectsMatchingTool);
+                Run("Tool order restores invalid, missing and duplicate entries", ToolOrderNormalization);
+                Run("Carousel reorders existing controls with their colors and mode", CarouselToolOrder);
+                Run("Settings order is staged until save and cancels independently", SettingsToolOrderStaging);
+                Run("First press selects pen once and rapid taps remain independent", FirstPressSelection);
+                Run("Identical ink input stays identical at every background zoom", InkZoomInvariant);
+                Run("Delayed callback delivery cannot reshape sampled ink", InkDeliveryDelayInvariant);
+                Run("Batched samples, timestamp rollover and lag bounds", InkPacketTimingAndBounds);
+                Run("Settings drag uses screen pixels without drift and ends cleanly", SettingsScreenDrag);
+                Run("Order icons match live panel vectors and survive reordering", ToolOrderIconsMatchPanel);
                 Console.WriteLine("PASS: " + passed + " regression groups");
                 return 0;
             }
@@ -644,6 +654,262 @@ namespace TouchZoomBoard
                     "Stroke width changed the geometric radius");
             }
             finally { window.Shutdown(); panel.Shutdown(); }
+        }
+
+        private static void ColorSelectsMatchingTool()
+        {
+            Check(DrawingToolSelection.Resolve(DrawingStyleKind.Shape, AppMode.Pointer) == AppMode.Line,
+                "First shape color must choose line");
+            foreach (var shape in new[] { AppMode.Line, AppMode.Arrow, AppMode.Rectangle, AppMode.Ellipse, AppMode.Circle })
+            {
+                Check(DrawingToolSelection.Resolve(DrawingStyleKind.Shape, shape) == shape, "Last shape was lost");
+                Check(DrawingToolSelection.Resolve(DrawingStyleKind.Pen, shape) == AppMode.Pen, "Pen color selected shape");
+                Check(DrawingToolSelection.Resolve(DrawingStyleKind.Highlighter, shape) == AppMode.Highlighter,
+                    "Highlighter color retained pen");
+            }
+            Check(new UserSettings().LastShapeMode == AppMode.Line, "New settings default to another shape");
+            Check(DrawingToolSelection.NormalizeShape((AppMode)999) == AppMode.Line, "Invalid saved shape accepted");
+        }
+
+        private static void ToolOrderNormalization()
+        {
+            var order = PanelToolLayout.Parse("Undo,Pen,Undo,unknown,999,Eraser");
+            Check(order.Take(3).SequenceEqual(new[] { PanelToolKind.Undo, PanelToolKind.Pen, PanelToolKind.Eraser }),
+                "Valid custom order was lost");
+            Check(order.Length == 9 && order.Distinct().Count() == 9, "Missing or duplicate tool");
+            Check(PanelToolLayout.Parse(PanelToolLayout.Serialize(order)).SequenceEqual(order), "Order did not round trip");
+            Check(PanelToolLayout.Parse(null).SequenceEqual(PanelToolLayout.DefaultOrder), "Legacy settings lost default");
+        }
+
+        private static void CarouselToolOrder()
+        {
+            var panel = new ControlPanelWindow(false);
+            try
+            {
+                panel.SetDrawingColor(DrawingStyleKind.Pen, Colors.Crimson);
+                panel.SetMode(AppMode.Pen);
+                var slots = Field<Dictionary<PanelToolKind, UIElement>>(panel, "toolSlots");
+                var original = slots[PanelToolKind.Pen];
+                var swatch = ((StackPanel)original).Children[1];
+                var order = PanelToolLayout.Normalize(new[] { PanelToolKind.Pen, PanelToolKind.Eraser, PanelToolKind.Undo });
+                panel.SetToolOrder(order);
+                var pages = Field<List<UIElement>>(panel, "carouselPages");
+                var first = (StackPanel)pages[0];
+                Check(pages.Count == 3 && first.Children.Count == 3, "Page geometry changed");
+                Check(ReferenceEquals(first.Children[0], original) && ReferenceEquals(first.Children[1], slots[PanelToolKind.Eraser]) &&
+                    ReferenceEquals(first.Children[2], slots[PanelToolKind.Undo]), "Favorite tools not grouped");
+                Check(ReferenceEquals(((StackPanel)first.Children[0]).Children[1], swatch), "Color selector was rebuilt");
+                Check(first.HorizontalAlignment == HorizontalAlignment.Center, "Custom page is not centered");
+                panel.SetToolOrder(order.Reverse());
+                panel.SetToolOrder(PanelToolLayout.DefaultOrder);
+                Check(ReferenceEquals(((StackPanel)pages[0]).Children[0], original), "Reset duplicated a tool");
+                Check(slots.Count == 9, "Repeated reorder added controls");
+            }
+            finally { panel.Shutdown(); }
+        }
+
+        private static void SettingsToolOrderStaging()
+        {
+            var settings = new UserSettings();
+            var original = settings.ToolOrder.ToArray();
+            var window = new SettingsWindow(settings);
+            try
+            {
+                var list = Field<ListBox>(window, "toolOrderListBox");
+                list.SelectedIndex = 3;
+                Call(window, "MoveToolOrder", -1);
+                var staged = Field<List<PanelToolKind>>(window, "editableToolOrder");
+                Check(staged[2] == PanelToolKind.Eraser && list.SelectedIndex == 2, "Move lost selection");
+                Check(settings.ToolOrder.SequenceEqual(original), "Unsaved editor changed live settings");
+                list.SelectedIndex = 0;
+                Call(window, "MoveToolOrder", -1);
+                Check(staged[0] == PanelToolKind.Pen, "First tool moved outside list");
+            }
+            finally { window.Close(); }
+            Check(settings.ToolOrder.SequenceEqual(original), "Cancel persisted staged order");
+        }
+
+        private static void SettingsScreenDrag()
+        {
+            var drag = new ScreenWindowDragState();
+            var bounds = new NativeMethods.RECT { Left = -1600, Top = 100, Right = -1080, Bottom = 710 };
+            int left, top;
+            Check(!drag.TryGetPosition(new Point(0, 0), out left, out top), "Idle gesture moved a window");
+            var press = new Point(-1500.25, 120.25);
+            Check(drag.Begin(bounds, press), "Screen drag did not begin");
+            Check(!drag.Begin(bounds, new Point(0, 0)), "Second contact replaced the active drag");
+            for (int index = 1; index <= 100; index++)
+            {
+                Check(drag.TryGetPosition(new Point(press.X + index * 0.25, press.Y - index * 0.25),
+                    out left, out top), "Active drag stopped");
+            }
+            Check(left == -1575 && top == 75, "Fractional-DPI moves accumulated rounding drift");
+            drag.TryGetPosition(press, out left, out top);
+            Check(left == bounds.Left && top == bounds.Top, "Returning to press did not restore the origin");
+            drag.End();
+            drag.End();
+            Check(!drag.IsActive && !drag.TryGetPosition(press, out left, out top), "Cancelled drag kept moving");
+            Check(drag.Begin(bounds, press), "A later drag could not begin after capture loss");
+            drag.TryGetPosition(new Point(press.X + 2100, press.Y + 40), out left, out top);
+            Check(left == 500 && top == 140, "Cross-monitor screen coordinates were scaled by zoom");
+            drag.End();
+            Check(!drag.Begin(new NativeMethods.RECT(), press), "Invalid native bounds accepted");
+        }
+
+        private static string IconPaths(DependencyObject root)
+        {
+            var path = root as System.Windows.Shapes.Path;
+            var result = path == null ? string.Empty : path.Data + ":" + path.StrokeThickness +
+                ":" + path.StrokeStartLineCap + ":" + path.StrokeLineJoin + ";";
+            for (int index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+                result += IconPaths(VisualTreeHelper.GetChild(root, index));
+            return result;
+        }
+
+        private static void ToolOrderIconsMatchPanel()
+        {
+            var settings = new UserSettings { LastShapeMode = AppMode.Circle };
+            var window = new SettingsWindow(settings);
+            var panel = new ControlPanelWindow(false);
+            try
+            {
+                panel.SetMode(AppMode.Circle);
+                var slots = Field<Dictionary<PanelToolKind, UIElement>>(panel, "toolSlots");
+                var list = Field<ListBox>(window, "toolOrderListBox");
+                Action verify = () =>
+                {
+                    foreach (ListBoxItem item in list.Items)
+                    {
+                        var kind = (PanelToolKind)item.Tag;
+                        var row = (Grid)item.Content;
+                        var preview = ((Border)row.Children[0]).Child;
+                        var slot = (StackPanel)slots[kind];
+                        var live = (UIElement)((Button)slot.Children[0]).Content;
+                        var expected = IconPaths(live);
+                        Check(expected.Length > 0 && IconPaths(preview) == expected,
+                            "Order icon geometry or manual stroke weight differs: " + kind);
+                        Check(!row.IsHitTestVisible, "Icon consumes row selection input");
+                    }
+                };
+                verify();
+                list.SelectedIndex = 3;
+                Call(window, "MoveToolOrder", -1);
+                verify();
+                Check((PanelToolKind)((ListBoxItem)list.Items[2]).Tag == PanelToolKind.Eraser,
+                    "Moved icon did not stay with its tool");
+                Check(settings.ToolOrder.SequenceEqual(PanelToolLayout.DefaultOrder), "Preview persisted unsaved order");
+            }
+            finally { window.Close(); panel.Shutdown(); }
+        }
+
+        private static void FirstPressSelection()
+        {
+            var press = new ToolPressState();
+            var point = new Point(10, 10);
+            var bounds = new Rect(0, 0, 34, 34);
+            for (var index = 0; index < 5; index++)
+            {
+                Check(press.Begin(point, true), "First down failed to select pen");
+                Check(!press.End(point, bounds), "Up selected pen a second time");
+            }
+            Check(press.Begin(point, true), "Selection depends on capture");
+            press.Cancel();
+            Check(!press.End(point, bounds), "Lost capture caused repeated selection");
+            Check(!press.Begin(point, false) && press.End(point, bounds), "Short shape/zoom press failed");
+            press.Begin(point, true);
+            Check(press.TryLongPress() && !press.TryLongPress(), "Long press invoked twice");
+            Check(!press.End(point, bounds), "Long press also invoked short action");
+            press.Begin(point, false);
+            press.Move(new Point(30, 10), 12);
+            Check(!press.TryLongPress() && !press.End(point, bounds), "Moved press opened a popup");
+        }
+
+        private static StylusPointCollection FilterInk(double zoom, bool delayed = false,
+            AppMode mode = AppMode.Pen, double width = 4.0, int initialTimestamp = 1000)
+        {
+            var filter = new AdaptiveStylusFilter();
+            filter.SetMode(mode);
+            filter.SetStrokeWidth(width);
+            filter.SetZoomFactor(zoom);
+            Call(filter, "ResetStroke");
+            var result = new StylusPointCollection();
+            for (var packet = 0; packet < 32; packet++)
+            {
+                if (delayed && (packet == 10 || packet == 22)) System.Threading.Thread.Sleep(100);
+                var points = new StylusPointCollection();
+                for (var sample = 0; sample < 4; sample++)
+                {
+                    var phase = (packet * 4 + sample) * 0.075;
+                    points.Add(new StylusPoint(200 + 60 * Math.Cos(phase), 200 + 45 * Math.Sin(phase), 0.5f));
+                }
+                Call(filter, "FilterPoints", points, unchecked(initialTimestamp + packet * 8), packet == 31);
+                foreach (var point in points) result.Add(point);
+            }
+            return result;
+        }
+
+        private static void SameInk(StylusPointCollection expected, StylusPointCollection actual, string message)
+        {
+            Check(expected.Count == actual.Count, message + ": count");
+            for (var index = 0; index < expected.Count; index++)
+                Check(Math.Abs(expected[index].X - actual[index].X) < 1e-9 &&
+                    Math.Abs(expected[index].Y - actual[index].Y) < 1e-9 &&
+                    expected[index].PressureFactor == actual[index].PressureFactor, message + ": point " + index);
+        }
+
+        private static void InkZoomInvariant()
+        {
+            foreach (var mode in new[] { AppMode.Pen, AppMode.Highlighter })
+            {
+                var width = mode == AppMode.Highlighter ? 36.0 : 4.0;
+                var expected = FilterInk(1.0, mode: mode, width: width);
+                foreach (var zoom in new[] { 1.25, 1.5, 2.0, 3.0, 5.0 })
+                    SameInk(expected, FilterInk(zoom, mode: mode, width: width), "Zoom changed saved geometry");
+            }
+            var window = new InteractionOverlayWindow();
+            try
+            {
+                var canvas = Field<AdaptiveInkCanvas>(window, "inkCanvas");
+                var filter = Field<AdaptiveStylusFilter>(canvas, "filter");
+                var generation = Field<int>(filter, "cancellationGeneration");
+                window.SetDiagnosticContext(3.0, 1.0);
+                window.SetDiagnosticContext(1.0, 1.0);
+                Check(Field<int>(filter, "cancellationGeneration") == generation, "Background zoom cancels active smoothing");
+                var stroke = new Stroke(FilterInk(3.0));
+                var saved = stroke.StylusPoints.Clone();
+                canvas.Strokes.Add(stroke);
+                window.SetDiagnosticContext(3.0, 1.5);
+                window.SetDiagnosticContext(1.0, 1.5);
+                SameInk(saved, stroke.StylusPoints, "Zoom reset altered existing ink");
+            }
+            finally { window.Shutdown(); }
+        }
+
+        private static void InkDeliveryDelayInvariant()
+        {
+            SameInk(FilterInk(1.0), FilterInk(3.0, delayed: true), "Callback delay changed geometry");
+        }
+
+        private static void InkPacketTimingAndBounds()
+        {
+            Check(Math.Abs(AdaptiveStylusFilter.GetPointIntervalSeconds(0.008, 16) - 0.0005) < 1e-12,
+                "Batched packet was stretched");
+            SameInk(FilterInk(2.0), FilterInk(2.0, initialTimestamp: int.MaxValue - 40), "Timestamp rollover changed ink");
+            foreach (var mode in new[] { AppMode.Pen, AppMode.Highlighter })
+            {
+                foreach (var width in new[] { 4.0, 12.0, 36.0 })
+                {
+                    var filtered = FilterInk(5.0, mode: mode, width: width);
+                    var maxLag = mode == AppMode.Highlighter ? 10.0 : width >= 12 ? 2.0 : 6.0;
+                    for (var index = 0; index < filtered.Count; index++)
+                    {
+                        var phase = index * 0.075;
+                        var raw = new Point(200 + 60 * Math.Cos(phase), 200 + 45 * Math.Sin(phase));
+                        var corrected = new Point(filtered[index].X, filtered[index].Y);
+                        Check((raw - corrected).Length <= maxLag + 1e-8, "Correction exceeded the lag bound");
+                    }
+                }
+            }
         }
 
         private static bool FindCenteredGrid(DependencyObject root)

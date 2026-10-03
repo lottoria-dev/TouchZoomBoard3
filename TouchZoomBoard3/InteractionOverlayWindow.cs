@@ -137,7 +137,7 @@ namespace TouchZoomBoard
                     DebugLog.WriteInkDiagnostic("INK-STROKE", "mode=" + mode +
                         ", zoom=" + diagnosticZoom.ToString("0.000") +
                         ", dpiScale=" + diagnosticDpiScale.ToString("0.000") +
-                        ", filter=adaptive-v8, " + diagnostic.ToLogText());
+                        ", filter=adaptive-v9, " + diagnostic.ToLogText());
                 }
                 else
                 {
@@ -370,13 +370,14 @@ namespace TouchZoomBoard
         internal void SetDiagnosticContext(double zoom, double dpiScale)
         {
             var normalizedZoom = Math.Max(1.0, Math.Min(5.0, zoom));
-            if (Math.Abs(diagnosticZoom - normalizedZoom) > 0.001)
-            {
-                inkCanvas.CancelActiveFiltering("zoom-change:" +
-                    diagnosticZoom.ToString("0.000") + "->" + normalizedZoom.ToString("0.000"));
-            }
+            var normalizedDpi = Math.Max(1.0, dpiScale);
+            // Background zoom leaves this overlay's DIP coordinate space intact.
+            // Cancelling mid-stroke would switch the remaining samples to raw ink.
+            // A real DPI-space change still invalidates the current filter state.
+            if (Math.Abs(diagnosticDpiScale - normalizedDpi) > 0.001)
+                inkCanvas.CancelActiveFiltering("dpi-change");
             diagnosticZoom = normalizedZoom;
-            diagnosticDpiScale = Math.Max(1.0, dpiScale);
+            diagnosticDpiScale = normalizedDpi;
             inkCanvas.SetZoomFactor(diagnosticZoom);
         }
 

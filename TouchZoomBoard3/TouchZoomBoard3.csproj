@@ -53,6 +53,7 @@
     <Compile Include="ContentPointerAction.cs" />
     <Compile Include="DebugLog.cs" />
     <Compile Include="DrawingStyleKind.cs" />
+    <Compile Include="DrawingToolSelection.cs" />
     <Compile Include="ExternalFocusState.cs" />
     <Compile Include="GlobalHotKeyService.cs" />
     <Compile Include="HighlighterWidthPolicy.cs" />
@@ -63,8 +64,11 @@
     <Compile Include="MagnifierHost.cs" />
     <Compile Include="MiniMapWindow.cs" />
     <Compile Include="NativeMethods.cs" />
+    <Compile Include="PanelToolLayout.cs" />
+    <Compile Include="ToolPressState.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="RoundedSurfaceBorder.cs" />
+    <Compile Include="ScreenWindowDragState.cs" />
     <Compile Include="SettingsWindow.cs" />
     <Compile Include="TrayService.cs" />
     <Compile Include="UserSettings.cs" />

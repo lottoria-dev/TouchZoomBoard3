@@ -1,10 +1,10 @@
 ﻿param(
-    [string]$Version = "3.0.5"
+    [string]$Version = "3.0.7"
 )
 
 $ErrorActionPreference = "Stop"
-if ($Version -ne '3.0.5') {
-    throw "정식 배포 버전은 3.0.5여야 합니다: $Version"
+if ($Version -ne '3.0.7') {
+    throw "정식 배포 버전은 3.0.7여야 합니다: $Version"
 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $solution = Join-Path $root "TouchZoomBoard3.sln"

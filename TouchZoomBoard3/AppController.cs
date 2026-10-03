@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -29,7 +30,7 @@ namespace TouchZoomBoard
         private DispatcherTimer idleZoomReleaseTimer;
         private Forms.Screen targetScreen;
         private AppMode mode = AppMode.Pointer;
-        private AppMode lastShapeMode = AppMode.Rectangle;
+        private AppMode lastShapeMode = AppMode.Line;
         private readonly bool startedByTouchRefresh;
         private readonly HashSet<string> pendingInputRefreshReasons =
             new HashSet<string>(StringComparer.Ordinal);
@@ -56,6 +57,7 @@ namespace TouchZoomBoard
             touchRefreshRestartGuarded = startedByTouchRefresh;
             softInputRefreshPerformed = startedByTouchRefresh;
             settings = UserSettings.Load();
+            lastShapeMode = DrawingToolSelection.NormalizeShape(settings.LastShapeMode);
             targetScreen = ResolveInitialScreen();
 
             inputRefreshTimer = new DispatcherTimer(DispatcherPriority.ApplicationIdle)
@@ -166,6 +168,7 @@ namespace TouchZoomBoard
             createdPanel.WpfTouchObserved += HandleWpfPanelTouch;
             createdPanel.DeviceChangeObserved += () => QueueInputDeviceRefresh("WM_DEVICECHANGE");
             createdPanel.FocusRestoreRequested += RestoreExternalForegroundWindow;
+            createdPanel.SetToolOrder(settings.ToolOrder);
             createdPanel.SetScreenName(targetScreen);
             createdPanel.SetGlassTintOpacity(settings.GlassTintOpacity);
             createdPanel.SetDrawingColor(DrawingStyleKind.Pen, ColorFromArgb(settings.PenColorArgb));
@@ -316,7 +319,15 @@ namespace TouchZoomBoard
         private void SetMode(AppMode newMode)
         {
             var previousMode = mode;
-            if (IsShapeMode(newMode)) lastShapeMode = newMode;
+            if (IsShapeMode(newMode))
+            {
+                lastShapeMode = newMode;
+                if (settings.LastShapeMode != newMode)
+                {
+                    settings.LastShapeMode = newMode;
+                    settings.Save();
+                }
+            }
             DebugLog.WriteDiagnostic("TOOL-MODE", "requested=" + newMode +
                 ", previous=" + previousMode + ", lastShape=" + lastShapeMode);
             if (newMode == AppMode.Pointer)
@@ -621,7 +632,7 @@ namespace TouchZoomBoard
                     miniMap?.InputHandle ?? IntPtr.Zero
                 };
                 excludedWindows.AddRange(panel.GetPopupWindowHandles());
-                if (settingsWindow?.IsVisible == true)
+                if (settingsWindow != null && settingsWindow.WindowHandle != IntPtr.Zero)
                 {
                     excludedWindows.Add(settingsWindow.WindowHandle);
                 }
@@ -947,19 +958,7 @@ namespace TouchZoomBoard
 
         private void SelectDrawingStyleTool(DrawingStyleKind kind, string reason)
         {
-            AppMode requestedMode;
-            switch (kind)
-            {
-                case DrawingStyleKind.Pen:
-                    requestedMode = AppMode.Pen;
-                    break;
-                case DrawingStyleKind.Highlighter:
-                    requestedMode = AppMode.Highlighter;
-                    break;
-                default:
-                    requestedMode = lastShapeMode;
-                    break;
-            }
+            var requestedMode = DrawingToolSelection.Resolve(kind, lastShapeMode);
 
             DebugLog.WriteDiagnostic("TOOL-STYLE", "kind=" + kind +
                 ", reason=" + reason + ", select=" + requestedMode);
@@ -989,12 +988,15 @@ namespace TouchZoomBoard
                 ApplyMagnificationExclusions();
                 panel?.RestorePresentationFocus("settings-closed");
             };
-            settingsWindow.Show();
+            // Create the hidden HWND first so neither the opening frame nor a
+            // moving settings window enters the live zoom/minimap capture.
+            new WindowInteropHelper(settingsWindow).EnsureHandle();
             if (panel?.IsVisible == true)
             {
                 NativeMethods.SetOwnerWindow(settingsWindow.WindowHandle, panel.WindowHandle);
             }
             ApplyMagnificationExclusions();
+            settingsWindow.Show();
         }
 
         private void ApplySettings()
@@ -1037,6 +1039,7 @@ namespace TouchZoomBoard
                 panel.SetGlassTintOpacity(settings.GlassTintOpacity);
             }
 
+            panel.SetToolOrder(settings.ToolOrder);
             panel.SetTooltipsEnabled(settings.TooltipsEnabled);
             panel.SetScreenName(targetScreen);
             if (panel.IsVisible)

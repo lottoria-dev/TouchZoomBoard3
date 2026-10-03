@@ -184,6 +184,7 @@ namespace TouchZoomBoard
             if (applied)
             {
                 lastExcludedWindows = validHandles;
+                RefreshFrame();
             }
             else
             {

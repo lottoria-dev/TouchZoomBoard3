@@ -3,7 +3,7 @@ name: Build Release
 on:
   push:
     tags:
-      - "v3.0.5"
+      - "v3.0.7"
 
 permissions:
   contents: write
@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
         with:
           msbuild-architecture: x64
 
@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          if ($version -ne '3.0.5') {
+          if ($version -ne '3.0.7') {
             throw "지원하지 않는 릴리스 태그입니다: $version"
           }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -36,7 +36,7 @@ jobs:
         run: ./build_release.ps1 -Version "${{ steps.version.outputs.version }}"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: TouchZoomBoard3-${{ steps.version.outputs.version }}-Windows-x64
           path: |
@@ -61,3 +61,4 @@ jobs:
             '--notes-file', 'RELEASE_NOTES.md'
           )
           & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release 생성 실패: $LASTEXITCODE" }

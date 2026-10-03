@@ -115,7 +115,8 @@ namespace TouchZoomBoard
 
         private bool active;
         private long startTimestamp;
-        private long lastPacketTimestamp;
+        private int lastPacketInputTimestamp;
+        private double lastValidPacketSeconds = 1.0 / 120.0;
         private double previousRawX;
         private double previousRawY;
         private double filteredX;
@@ -275,7 +276,8 @@ namespace TouchZoomBoard
         {
             active = false;
             startTimestamp = Stopwatch.GetTimestamp();
-            lastPacketTimestamp = startTimestamp;
+            lastPacketInputTimestamp = 0;
+            lastValidPacketSeconds = 1.0 / 120.0;
             previousRawX = previousRawY = filteredX = filteredY = 0.0;
             filteredVelocityX = filteredVelocityY = 0.0;
             packetCount = pointCount = 0;
@@ -325,10 +327,19 @@ namespace TouchZoomBoard
         {
             var points = input.GetStylusPoints();
             if (points == null || points.Count == 0) return;
+            FilterPoints(points, input.Timestamp, anchorFinalPoint);
+            input.SetStylusPoints(points);
+        }
 
-            var now = Stopwatch.GetTimestamp();
+        private void FilterPoints(StylusPointCollection points, int inputTimestamp, bool anchorFinalPoint)
+        {
+            if (points == null || points.Count == 0) return;
             var hasPreviousPacket = packetCount > 0;
-            var measuredPacketSeconds = (now - lastPacketTimestamp) / (double)Stopwatch.Frequency;
+            // Input timestamps remain stable when magnification delays delivery.
+            // Stopwatch measures processing time, not the sampling interval.
+            var measuredPacketSeconds = hasPreviousPacket
+                ? unchecked((uint)(inputTimestamp - lastPacketInputTimestamp)) / 1000.0
+                : 0.0;
             if (hasPreviousPacket && measuredPacketSeconds > 0.0 && measuredPacketSeconds < 1.0)
             {
                 var intervalMilliseconds = measuredPacketSeconds * 1000.0;
@@ -339,13 +350,13 @@ namespace TouchZoomBoard
                 measuredPacketIntervals++;
             }
 
-            // 실제 콜백 간격을 사용한다. Beta 1처럼 30 Hz 입력을 60 Hz로 잘라 계산하지 않는다.
-            var packetSeconds = hasPreviousPacket ? measuredPacketSeconds : 1.0 / 120.0;
-            packetSeconds = Math.Max(1.0 / 500.0, Math.Min(1.0 / 10.0, packetSeconds));
-            var pointSeconds = Math.Max(1.0 / 500.0, Math.Min(1.0 / 10.0, packetSeconds / points.Count));
-            var reanchorAtFirstPoint = hasPreviousPacket &&
+            var validInterval = measuredPacketSeconds > 0.0 && measuredPacketSeconds < 1.0;
+            if (hasPreviousPacket && validInterval) lastValidPacketSeconds = measuredPacketSeconds;
+            var packetSeconds = Math.Max(0.001, Math.Min(0.1, lastValidPacketSeconds));
+            var pointSeconds = GetPointIntervalSeconds(packetSeconds, points.Count);
+            var reanchorAtFirstPoint = hasPreviousPacket && validInterval &&
                 measuredPacketSeconds >= ReanchorThresholdSeconds;
-            lastPacketTimestamp = now;
+            lastPacketInputTimestamp = inputTimestamp;
             packetCount++;
 
             for (var index = 0; index < points.Count; index++)
@@ -399,13 +410,9 @@ namespace TouchZoomBoard
                     ? HighlighterSpeedCoefficient
                     : Lerp(PenSpeedCoefficient, ThickPenSpeedCoefficient, thickPenFactor);
 
-                // 확대 화면에서는 작은 완만한 곡선의 각짐이 더 쉽게 드러난다. 화면 좌표를
-                // 배율로 변환하지 않고, 6 DIP 이하의 가는 펜에만 보정 강도를 소폭 높인다.
-                var zoomCurveFactor = highlighterProfile || activeStrokeWidth > 6.0
-                    ? 0.0
-                    : Math.Max(0.0, Math.Min(1.0, (activeZoom - 1.0) / 2.0));
-                minimumCutoff *= Lerp(1.0, 0.92, zoomCurveFactor);
-                speedCoefficient *= Lerp(1.0, 0.82, zoomCurveFactor);
+                // InkCanvas collects in screen DIPs in both normal and zoomed
+                // views. Apply one profile: scaling the filter by background zoom
+                // permanently changes the saved stroke's geometry.
                 var positionAlpha = Alpha(
                     minimumCutoff + speedCoefficient * speed,
                     pointSeconds);
@@ -494,7 +501,13 @@ namespace TouchZoomBoard
                 pointCount++;
             }
 
-            input.SetStylusPoints(points);
+        }
+
+        internal static double GetPointIntervalSeconds(double packetSeconds, int points)
+        {
+            // A batched report must share its interval among all samples. The old
+            // 2 ms minimum per point stretched 8 ms / 16 points into 32 ms.
+            return Math.Max(0.0001, Math.Min(0.1, packetSeconds / Math.Max(1, points)));
         }
 
         private void CompleteStroke()
@@ -524,8 +537,8 @@ namespace TouchZoomBoard
                 EndpointResidualCorrection = endpointResidualCorrection,
                 StrokeWidth = activeStrokeWidth,
                 FilterProfile = activeMode == AppMode.Highlighter
-                    ? "highlighter-balanced-a2"
-                    : "pen-curve-stable-a2"
+                    ? "highlighter-input-time-v9"
+                    : "pen-input-time-v9"
             });
             active = false;
         }

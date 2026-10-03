@@ -212,7 +212,7 @@ namespace TouchZoomBoard
             notifyIcon = new Forms.NotifyIcon
             {
                 Icon = LoadIcon(),
-                Text = "TouchZoomBoard3 3.0.5",
+                Text = "TouchZoomBoard3 3.0.7",
                 ContextMenuStrip = trayMenu,
                 Visible = true
             };

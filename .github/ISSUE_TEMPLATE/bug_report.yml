@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: TouchZoomBoard3 버전
-      placeholder: 3.0.5
+      placeholder: 3.0.7
     validations:
       required: true
   - type: input
@@ -42,4 +42,4 @@ body:
     id: environment
     attributes:
       label: 추가 환경 정보
-      description: 프로그램 확대 배율, 펜 굵기와 입력 장치를 적어 주세요. 3.0.5는 로그 파일을 만들지 않습니다.
+      description: 프로그램 확대 배율, 펜 굵기와 입력 장치를 적어 주세요. 3.0.7는 로그 파일을 만들지 않습니다.

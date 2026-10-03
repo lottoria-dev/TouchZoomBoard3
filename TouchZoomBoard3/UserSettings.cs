@@ -15,6 +15,8 @@ namespace TouchZoomBoard
 
         internal bool PanelVisible { get; set; } = true;
         internal bool TooltipsEnabled { get; set; } = true;
+        internal PanelToolKind[] ToolOrder { get; set; } = PanelToolLayout.DefaultOrder;
+        internal AppMode LastShapeMode { get; set; } = AppMode.Line;
         internal double PanelXRatio { get; set; } = 1.0;
         internal double PanelYRatio { get; set; } = 0.08;
         internal string TargetDeviceName { get; set; } = string.Empty;
@@ -48,6 +50,10 @@ namespace TouchZoomBoard
 
                     settings.PanelVisible = ReadBoolean(key, "PanelVisible", true);
                     settings.TooltipsEnabled = ReadBoolean(key, "TooltipsEnabled", true);
+                    settings.ToolOrder = PanelToolLayout.Parse(Convert.ToString(key.GetValue("PanelToolOrder", string.Empty)));
+                    AppMode savedShape;
+                    if (Enum.TryParse(Convert.ToString(key.GetValue("LastShapeMode", "Line")), true, out savedShape))
+                        settings.LastShapeMode = DrawingToolSelection.NormalizeShape(savedShape);
                     settings.PanelXRatio = ReadRatio(key, "PanelXRatio", 1.0);
                     settings.PanelYRatio = ReadRatio(key, "PanelYRatio", 0.08);
                     settings.TargetDeviceName = Convert.ToString(key.GetValue("TargetDeviceName", string.Empty));
@@ -172,6 +178,8 @@ namespace TouchZoomBoard
 
                     key.SetValue("PanelVisible", PanelVisible ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("TooltipsEnabled", TooltipsEnabled ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue("PanelToolOrder", PanelToolLayout.Serialize(ToolOrder), RegistryValueKind.String);
+                    key.SetValue("LastShapeMode", DrawingToolSelection.NormalizeShape(LastShapeMode).ToString(), RegistryValueKind.String);
                     key.SetValue("PanelXRatio", PanelXRatio.ToString("0.0000", CultureInfo.InvariantCulture), RegistryValueKind.String);
                     key.SetValue("PanelYRatio", PanelYRatio.ToString("0.0000", CultureInfo.InvariantCulture), RegistryValueKind.String);
                     key.SetValue("TargetDeviceName", TargetDeviceName ?? string.Empty, RegistryValueKind.String);

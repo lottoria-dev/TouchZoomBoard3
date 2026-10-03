@@ -41,6 +41,8 @@ namespace TouchZoomBoard
                 new PropertyMetadata(false));
         private readonly Dictionary<AppMode, List<Button>> modeButtons = new Dictionary<AppMode, List<Button>>();
         private readonly List<UIElement> carouselPages = new List<UIElement>();
+        private readonly Dictionary<PanelToolKind, UIElement> toolSlots = new Dictionary<PanelToolKind, UIElement>();
+        private PanelToolKind[] toolOrder = PanelToolLayout.DefaultOrder;
         private readonly Dictionary<DrawingStyleKind, Button> colorSelectorButtons = new Dictionary<DrawingStyleKind, Button>();
         private readonly Dictionary<Button, ToolTip> helpToolTips = new Dictionary<Button, ToolTip>();
         private readonly HashSet<Button> touchSuppressedToolTips = new HashSet<Button>();
@@ -736,10 +738,8 @@ namespace TouchZoomBoard
             root.Children.Add(previous);
 
             carouselHost = new Grid { Width = ToolSlotWidthDip * 3, Height = CarouselHeightDip };
-            carouselPages.Add(CreateInkCarouselPage());
-            carouselPages.Add(CreateEraseCarouselPage());
-            carouselPages.Add(CreateControlCarouselPage());
-            foreach (var page in carouselPages) carouselHost.Children.Add(page);
+            CreateCarouselToolSlots();
+            RebuildCarouselPages();
             Grid.SetColumn(carouselHost, 1);
             root.Children.Add(carouselHost);
 
@@ -749,37 +749,46 @@ namespace TouchZoomBoard
             return root;
         }
 
-        private UIElement CreateInkCarouselPage()
+        private void CreateCarouselToolSlots()
         {
-            var row = CreateCarouselPageRow();
-            row.Children.Add(CreateToolSlot(
-                CreatePenModeButton(),
-                CreateColorSelectorButton(DrawingStyleKind.Pen, "펜 색상", "현재 펜 색상입니다. 누르면 16색 팔레트가 열립니다.", ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(
-                CreateHighlighterModeButton(),
-                CreateColorSelectorButton(DrawingStyleKind.Highlighter, "형광펜 색상", "현재 형광펜 색상입니다. 누르면 16색 팔레트가 열립니다.", ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(
-                CreateShapeDropDownButton(),
-                CreateColorSelectorButton(DrawingStyleKind.Shape, "도형 색상", "현재 도형 색상입니다. 누르면 16색 팔레트가 열립니다.", ToolButtonSizeDip)));
-            return row;
+            toolSlots[PanelToolKind.Pen] = CreateToolSlot(CreatePenModeButton(),
+                CreateColorSelectorButton(DrawingStyleKind.Pen, "펜 색상", "색상을 선택하면 펜이 활성화됩니다.", ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Highlighter] = CreateToolSlot(CreateHighlighterModeButton(),
+                CreateColorSelectorButton(DrawingStyleKind.Highlighter, "형광펜 색상", "색상을 선택하면 형광펜이 활성화됩니다.", ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Shapes] = CreateToolSlot(CreateShapeDropDownButton(),
+                CreateColorSelectorButton(DrawingStyleKind.Shape, "도형 색상", "색상을 선택하면 마지막 도형이 활성화됩니다. 처음에는 선분을 선택합니다.", ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Eraser] = CreateToolSlot(CreateModeButton(PanelIcon.Eraser, "지우개", "필기 선이나 도형을 터치해 지웁니다. 되돌리기로 삭제한 항목을 하나씩 복구할 수 있습니다.", AppMode.Eraser, ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Undo] = CreateToolSlot(CreateIconButton(PanelIcon.Undo, "되돌리기", "마지막 필기·도형 추가를 취소하거나 지우개·전체 지움으로 삭제한 판서를 복구합니다.", (s, e) => UndoRequested?.Invoke(), false, ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Clear] = CreateToolSlot(CreateIconButton(PanelIcon.Clear, "전체 지움", "현재 화면의 판서를 모두 지웁니다. 세션을 종료하기 전에는 되돌리기로 복구할 수 있습니다.", (s, e) => ClearRequested?.Invoke(), false, ToolButtonSizeDip));
+            toolSlots[PanelToolKind.Pointer] = CreateToolSlot(CreateModeButton(PanelIcon.Pointer, "자료 조작", "판서 표시와 확대 상태를 유지한 채 브라우저·프레젠테이션을 직접 조작합니다. 일부 윈도우 요소는 조작에 제한이 있습니다.", AppMode.Pointer, ToolButtonSizeDip));
+            toolSlots[PanelToolKind.MiniMap] = CreateToolSlot(CreateIconButton(PanelIcon.MiniMap, "미니맵 위치", "미니맵을 패널의 위쪽과 아래쪽 사이에서 전환합니다. 미니맵을 직접 누르거나 끌면 확대 영역이 이동합니다.", (s, e) => MiniMapDockRequested?.Invoke(), false, ToolButtonSizeDip));
+            toolSlots[PanelToolKind.EndSession] = CreateToolSlot(CreateIconButton(PanelIcon.Power, "수업 화면 종료", "확대와 필기를 모두 끝내고 정상 화면으로 돌아갑니다. 긴급 복구: Ctrl+Alt+Shift+Esc", (s, e) => EndSessionRequested?.Invoke(), false, ToolButtonSizeDip));
         }
 
-        private UIElement CreateEraseCarouselPage()
+        internal void SetToolOrder(IEnumerable<PanelToolKind> requestedOrder)
         {
-            var row = CreateCarouselPageRow();
-            row.Children.Add(CreateToolSlot(CreateModeButton(PanelIcon.Eraser, "지우개", "필기 선이나 도형을 터치해 지웁니다. 되돌리기로 삭제한 항목을 하나씩 복구할 수 있습니다.", AppMode.Eraser, ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(CreateIconButton(PanelIcon.Undo, "되돌리기", "마지막 필기·도형 추가를 취소하거나 지우개·전체 지움으로 삭제한 판서를 복구합니다.", (s, e) => UndoRequested?.Invoke(), false, ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(CreateIconButton(PanelIcon.Clear, "전체 지움", "현재 화면의 판서를 모두 지웁니다. 세션을 종료하기 전에는 되돌리기로 복구할 수 있습니다.", (s, e) => ClearRequested?.Invoke(), false, ToolButtonSizeDip)));
-            return row;
+            var normalized = PanelToolLayout.Normalize(requestedOrder);
+            if (toolOrder.SequenceEqual(normalized)) return;
+            CloseActiveToolPopups();
+            toolOrder = normalized;
+            RebuildCarouselPages();
+            ShowCarouselPage(0);
         }
 
-        private UIElement CreateControlCarouselPage()
+        private void RebuildCarouselPages()
         {
-            var row = CreateCarouselPageRow();
-            row.Children.Add(CreateToolSlot(CreateModeButton(PanelIcon.Pointer, "자료 조작", "판서 표시와 확대 상태를 유지한 채 브라우저·프레젠테이션을 직접 조작합니다. 일부 윈도우 요소는 조작에 제한이 있습니다.", AppMode.Pointer, ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(CreateIconButton(PanelIcon.MiniMap, "미니맵 위치", "미니맵을 패널의 위쪽과 아래쪽 사이에서 전환합니다. 미니맵을 직접 누르거나 끌면 확대 영역이 이동합니다.", (s, e) => MiniMapDockRequested?.Invoke(), false, ToolButtonSizeDip)));
-            row.Children.Add(CreateToolSlot(CreateIconButton(PanelIcon.Power, "수업 화면 종료", "확대와 필기를 모두 끝내고 정상 화면으로 돌아갑니다. 긴급 복구: Ctrl+Alt+Shift+Esc", (s, e) => EndSessionRequested?.Invoke(), false, ToolButtonSizeDip)));
-            return row;
+            // Reparent existing slots so icon, tooltip, color and width controls
+            // retain their state and event handlers when the order changes.
+            foreach (var page in carouselPages) ((Panel)page).Children.Clear();
+            carouselHost.Children.Clear();
+            carouselPages.Clear();
+            for (var offset = 0; offset < toolOrder.Length; offset += 3)
+            {
+                var row = CreateCarouselPageRow();
+                foreach (var item in toolOrder.Skip(offset).Take(3)) row.Children.Add(toolSlots[item]);
+                carouselPages.Add(row);
+                carouselHost.Children.Add(row);
+            }
         }
 
         private Button CreateCarouselArrowButton(PanelIcon icon, string title, int direction)
@@ -1310,7 +1319,7 @@ namespace TouchZoomBoard
                 false,
                 ToolButtonSizeDip);
             var menu = CreatePenThicknessPopup();
-            AttachLongPressPopup(button, menu, () => ModeRequested?.Invoke(AppMode.Pen), "thickness");
+            AttachLongPressPopup(button, menu, () => ModeRequested?.Invoke(AppMode.Pen), "thickness", selectOnPress: true);
             AddModeButton(AppMode.Pen, button);
             return button;
         }
@@ -1329,7 +1338,7 @@ namespace TouchZoomBoard
                 width => HighlighterWidthRequested?.Invoke(width),
                 highlighterThicknessMenuItems,
                 "Highlighter");
-            AttachLongPressPopup(button, menu, () => ModeRequested?.Invoke(AppMode.Highlighter), "thickness");
+            AttachLongPressPopup(button, menu, () => ModeRequested?.Invoke(AppMode.Highlighter), "thickness", selectOnPress: true);
             AddModeButton(AppMode.Highlighter, button);
             return button;
         }
@@ -1380,72 +1389,58 @@ namespace TouchZoomBoard
         }
 
         private void AttachLongPressPopup(Button button, Popup popup, Action shortAction,
-            string popupKind, int longPressMilliseconds = 650)
+            string popupKind, int longPressMilliseconds = 650, bool selectOnPress = false)
         {
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(longPressMilliseconds) };
-            var pressActive = false;
-            var longPressTriggered = false;
-            var pressOrigin = new Point();
+            var press = new ToolPressState();
             TouchDevice activeTouchDevice = null;
-            var invokeShortOnce = CreateSingleActivation(shortAction, DescribeInputSource(button));
+            StylusDevice activeStylusDevice = null;
+            var mousePress = false;
+            var suppressPromotedClickUntil = DateTime.MinValue;
 
             Action<Point> beginPress = point =>
             {
-                pressOrigin = point;
-                pressActive = true;
-                longPressTriggered = false;
                 timer.Stop();
+                if (press.Begin(point, selectOnPress)) shortAction?.Invoke();
                 timer.Start();
             };
             Action<Point> updatePress = point =>
             {
-                if (!pressActive || !MovedBeyondThreshold(
-                        pressOrigin, point, LongPressMovementToleranceDip)) return;
-                pressActive = false;
-                timer.Stop();
+                press.Move(point, LongPressMovementToleranceDip);
+                if (!press.Active) timer.Stop();
             };
-            Action endPress = () =>
+            Action<Point> endPress = point =>
             {
-                pressActive = false;
                 timer.Stop();
-                if (longPressTriggered)
-                    Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => longPressTriggered = false));
+                var invoke = press.End(point, new Rect(0, 0, button.ActualWidth, button.ActualHeight));
+                suppressPromotedClickUntil = DateTime.UtcNow.AddMilliseconds(300);
+                if (invoke) shortAction?.Invoke();
             };
+            Action cancelPress = () => { timer.Stop(); press.Cancel(); };
 
             timer.Tick += (sender, args) =>
             {
                 timer.Stop();
-                if (!pressActive) return;
-                pressActive = false;
-                longPressTriggered = true;
-                var popupName = popupKind == "zoom" ? "배율 팝업" : "두께 팝업";
-                DebugLog.WriteDiagnostic("PANEL-LONG", DescribeInputSource(button) + " " + popupName + " 길게 누르기 실행");
+                if (!press.TryLongPress()) return;
+                suppressPromotedClickUntil = DateTime.UtcNow.AddMilliseconds(500);
                 CloseTouchToolTip();
                 CloseActiveToolPopups();
                 button.ReleaseAllTouchCaptures();
+                if (button.IsStylusCaptured) button.ReleaseStylusCapture();
                 if (button.IsMouseCaptured) button.ReleaseMouseCapture();
                 popup.PlacementTarget = button;
                 popup.Placement = PlacementMode.Bottom;
                 activeOptionPopup = popup;
                 activeOptionPopupKind = popupKind;
                 popup.IsOpen = true;
-                DebugLog.WriteDiagnostic(popupKind == "zoom" ? "PANEL-ZOOM" : "PANEL-THICKNESS",
-                    DescribeInputSource(button) + " popupOpen=" + popup.IsOpen);
             };
             button.PreviewTouchDown += (sender, args) =>
             {
-                if (activeTouchDevice != null)
-                {
-                    args.Handled = true;
-                    return;
-                }
-
-                activeTouchDevice = args.TouchDevice;
-                beginPress(args.GetTouchPoint(button).Position);
-                var captured = button.CaptureTouch(activeTouchDevice);
-                DebugLog.WriteDiagnostic("PANEL-LONG", DescribeInputSource(button) +
-                    " TouchDown id=" + activeTouchDevice.Id + ", capture=" + captured);
                 args.Handled = true;
+                if (activeTouchDevice != null || activeStylusDevice != null) return;
+                beginPress(args.GetTouchPoint(button).Position);
+                activeTouchDevice = args.TouchDevice;
+                button.CaptureTouch(activeTouchDevice);
             };
             button.PreviewTouchMove += (sender, args) =>
             {
@@ -1456,44 +1451,91 @@ namespace TouchZoomBoard
             button.PreviewTouchUp += (sender, args) =>
             {
                 if (activeTouchDevice != args.TouchDevice) return;
-
-                var invokeShortAction = pressActive && !longPressTriggered;
+                var point = args.GetTouchPoint(button).Position;
                 activeTouchDevice = null;
-                endPress();
+                endPress(point);
                 button.ReleaseAllTouchCaptures();
                 args.Handled = true;
-                DebugLog.WriteDiagnostic("PANEL-LONG", DescribeInputSource(button) +
-                    " TouchUp short=" + invokeShortAction);
-                if (invokeShortAction) invokeShortOnce();
             };
             button.LostTouchCapture += (sender, args) =>
             {
                 if (activeTouchDevice != args.TouchDevice) return;
                 activeTouchDevice = null;
-                endPress();
+                cancelPress();
+            };
+            // Real stylus input uses its own gesture; touchscreen stylus events
+            // must remain unhandled so WPF can promote them to TouchDown.
+            button.PreviewStylusDown += (sender, args) =>
+            {
+                if (args.StylusDevice?.TabletDevice?.Type != TabletDeviceType.Stylus) return;
+                args.Handled = true;
+                if (activeTouchDevice != null || activeStylusDevice != null) return;
+                beginPress(args.GetPosition(button));
+                activeStylusDevice = args.StylusDevice;
+                activeStylusDevice.Capture(button);
+            };
+            button.PreviewStylusMove += (sender, args) =>
+            {
+                if (activeStylusDevice == null || activeStylusDevice != args.StylusDevice) return;
+                updatePress(args.GetPosition(button));
+                args.Handled = true;
+            };
+            button.PreviewStylusUp += (sender, args) =>
+            {
+                if (activeStylusDevice == null || activeStylusDevice != args.StylusDevice) return;
+                var device = activeStylusDevice;
+                activeStylusDevice = null;
+                endPress(args.GetPosition(button));
+                device.Capture(null);
+                args.Handled = true;
+            };
+            button.LostStylusCapture += (sender, args) =>
+            {
+                if (activeStylusDevice == null || activeStylusDevice != args.StylusDevice) return;
+                activeStylusDevice = null;
+                cancelPress();
             };
             button.PreviewMouseLeftButtonDown += (sender, args) =>
             {
-                if (args.StylusDevice == null) beginPress(args.GetPosition(button));
+                // Duplicate promoted mouse messages belong to the touch/stylus
+                // press. A new physical mouse press is always independent.
+                if (activeTouchDevice != null || activeStylusDevice != null ||
+                    (args.StylusDevice != null && DateTime.UtcNow < suppressPromotedClickUntil))
+                {
+                    args.Handled = true;
+                    return;
+                }
+                beginPress(args.GetPosition(button));
+                mousePress = true;
+                button.CaptureMouse();
+                args.Handled = true;
             };
             button.PreviewMouseMove += (sender, args) =>
             {
-                if (args.StylusDevice == null && args.LeftButton == MouseButtonState.Pressed)
-                    updatePress(args.GetPosition(button));
+                if (!mousePress) return;
+                updatePress(args.GetPosition(button));
+                args.Handled = true;
             };
             button.PreviewMouseLeftButtonUp += (sender, args) =>
             {
-                if (args.StylusDevice == null) endPress();
+                if (!mousePress) return;
+                mousePress = false;
+                endPress(args.GetPosition(button));
+                if (button.IsMouseCaptured) button.ReleaseMouseCapture();
+                args.Handled = true;
+            };
+            button.LostMouseCapture += (sender, args) =>
+            {
+                if (!mousePress) return;
+                mousePress = false;
+                cancelPress();
             };
             button.Click += (sender, args) =>
             {
-                if (longPressTriggered)
-                {
-                    longPressTriggered = false;
-                    return;
-                }
-                invokeShortOnce();
+                // Keyboard/automation activation has no physical press state.
+                if (!press.Active && DateTime.UtcNow >= suppressPromotedClickUntil) shortAction?.Invoke();
             };
+            button.Unloaded += (sender, args) => cancelPress();
         }
 
         private Button CreateColorSelectorButton(DrawingStyleKind kind, string title, string tooltip, double buttonWidth)
@@ -2265,6 +2307,28 @@ namespace TouchZoomBoard
                 case AppMode.Line: return CreateIcon(PanelIcon.Line, brush, 16);
                 default: return CreateIcon(PanelIcon.Arrow, brush, 16);
             }
+        }
+
+        internal static UIElement CreateToolOrderIcon(PanelToolKind kind, AppMode lastShapeMode)
+        {
+            // Reuse the actual panel vectors, including the user's line weights.
+            if (kind == PanelToolKind.Shapes)
+                return CreateDropDownIcon(CreateShapeIcon(
+                    DrawingToolSelection.NormalizeShape(lastShapeMode), CreateSilverIconBrush()));
+            PanelIcon icon;
+            switch (kind)
+            {
+                case PanelToolKind.Pen: icon = PanelIcon.Pen; break;
+                case PanelToolKind.Highlighter: icon = PanelIcon.Highlighter; break;
+                case PanelToolKind.Eraser: icon = PanelIcon.Eraser; break;
+                case PanelToolKind.Undo: icon = PanelIcon.Undo; break;
+                case PanelToolKind.Clear: icon = PanelIcon.Clear; break;
+                case PanelToolKind.Pointer: icon = PanelIcon.Pointer; break;
+                case PanelToolKind.MiniMap: icon = PanelIcon.MiniMap; break;
+                case PanelToolKind.EndSession: icon = PanelIcon.Power; break;
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+            return CreateIcon(icon, CreateSilverIconBrush(), 17);
         }
 
         private static UIElement CreateIcon(PanelIcon icon, Brush brush, double size)

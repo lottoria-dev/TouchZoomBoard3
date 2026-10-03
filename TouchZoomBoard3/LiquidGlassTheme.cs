@@ -96,17 +96,19 @@ namespace TouchZoomBoard
                 ", rootUiOpacity=1.00");
         }
 
-        internal static Brush CreateWindowVeilBrush()
+        internal static Brush CreateWindowVeilBrush(double opacityMultiplier = 1.0)
         {
             // 환경설정·정보창은 흰 스마트 글래스: 읽을 수 있지만 뒤 화면이 조금 비친다.
+            Func<byte, byte> alpha = value => (byte)Math.Min(255,
+                Math.Round(value * opacityMultiplier, MidpointRounding.AwayFromZero));
             return CreateGradient(
                 new Point(0, 0),
                 new Point(1, 1),
                 new[]
                 {
-                    Stop(218, Colors.White, 0.00),
-                    Stop(184, Color.FromRgb(252, 253, 255), 0.44),
-                    Stop(166, Color.FromRgb(241, 245, 249), 1.00)
+                    Stop(alpha(218), Colors.White, 0.00),
+                    Stop(alpha(184), Color.FromRgb(252, 253, 255), 0.44),
+                    Stop(alpha(166), Color.FromRgb(241, 245, 249), 1.00)
                 });
         }
 

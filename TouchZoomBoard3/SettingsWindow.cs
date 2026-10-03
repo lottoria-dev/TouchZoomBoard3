@@ -50,6 +50,10 @@ namespace TouchZoomBoard
         private readonly TextBlock zoomValue;
         private readonly CheckBox tooltipsCheckBox;
         private readonly CheckBox startupCheckBox;
+        private readonly List<PanelToolKind> editableToolOrder;
+        private ListBox toolOrderListBox;
+        private Button toolUpButton;
+        private Button toolDownButton;
         private readonly Dictionary<PastelThemeColor, Button> glassLightButtons =
             new Dictionary<PastelThemeColor, Button>();
         private PastelThemeColor selectedPastelTheme;
@@ -59,6 +63,10 @@ namespace TouchZoomBoard
         private Border customGlassLightPreview;
         private IntPtr windowHandle;
         private readonly Border windowChrome;
+        private readonly ScreenWindowDragState titleDrag = new ScreenWindowDragState();
+        private FrameworkElement titleDragHandle;
+        private TouchDevice titleDragTouch;
+        private StylusDevice titleDragStylus;
 
         internal event Action Applied;
         internal event Action ResetPositionRequested;
@@ -67,6 +75,7 @@ namespace TouchZoomBoard
         internal SettingsWindow(UserSettings settings)
         {
             this.settings = settings;
+            editableToolOrder = PanelToolLayout.Normalize(settings.ToolOrder).ToList();
             selectedPastelTheme = settings.PastelTheme;
             useCustomGlassLightColor = settings.UseCustomGlassLightColor;
             selectedCustomGlassLightColor = ColorFromArgb(settings.CustomGlassLightColorArgb);
@@ -210,6 +219,11 @@ namespace TouchZoomBoard
             });
             tabs.Items.Add(new TabItem
             {
+                Header = "도구 순서",
+                Content = CreateToolOrderPage()
+            });
+            tabs.Items.Add(new TabItem
+            {
                 Header = "사용법 안내",
                 Content = CreateHelpPage()
             });
@@ -253,7 +267,7 @@ namespace TouchZoomBoard
                 Child = chromeRoot,
                 Opacity = 1.0,
                 CornerRadius = new CornerRadius(22),
-                Background = LiquidGlassTheme.CreateWindowVeilBrush(),
+                Background = LiquidGlassTheme.CreateWindowVeilBrush(1.15),
                 BorderBrush = LiquidGlassTheme.HairlineBrush,
                 BorderThickness = new Thickness(1)
             };
@@ -271,6 +285,8 @@ namespace TouchZoomBoard
             };
             SizeChanged += (sender, args) => Dispatcher.BeginInvoke(
                 DispatcherPriority.Render, new Action(ApplyWindowRegion));
+            Closed += (sender, args) => EndTitleDrag();
+            Deactivated += (sender, args) => EndTitleDrag();
             UpdateValueLabels();
         }
 
@@ -316,12 +332,7 @@ namespace TouchZoomBoard
             Grid.SetColumn(closeButton, 1);
             grid.Children.Add(closeButton);
 
-            grid.PreviewMouseLeftButtonDown += (sender, args) =>
-            {
-                if (args.OriginalSource is DependencyObject source &&
-                    FindVisualParent<Button>(source) != null) return;
-                if (args.ClickCount == 1) DragMove();
-            };
+            AttachTitleDrag(grid);
             return new Border
             {
                 Child = grid,
@@ -334,6 +345,123 @@ namespace TouchZoomBoard
                 BorderThickness = new Thickness(0, 0, 0, 0.75),
                 CornerRadius = new CornerRadius(21, 21, 0, 0)
             };
+        }
+
+        private void AttachTitleDrag(FrameworkElement handle)
+        {
+            // Do not enter Windows' modal move/outline loop. Keep WPF rendering
+            // and magnification exclusion active while moving the actual HWND.
+            handle.PreviewTouchDown += (sender, args) =>
+            {
+                if (!BeginTitleDrag(handle, args.OriginalSource,
+                    PointToScreen(args.GetTouchPoint(this).Position))) return;
+                titleDragTouch = args.TouchDevice;
+                if (!handle.CaptureTouch(args.TouchDevice)) { EndTitleDrag(); return; }
+                args.Handled = true;
+            };
+            handle.PreviewTouchMove += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragTouch != args.TouchDevice) return;
+                MoveTitleDrag(PointToScreen(args.GetTouchPoint(this).Position));
+                args.Handled = true;
+            };
+            handle.PreviewTouchUp += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragTouch != args.TouchDevice) return;
+                MoveTitleDrag(PointToScreen(args.GetTouchPoint(this).Position));
+                EndTitleDrag();
+                args.Handled = true;
+            };
+            handle.LostTouchCapture += (sender, args) =>
+            {
+                if (titleDragTouch == args.TouchDevice) EndTitleDrag();
+            };
+            handle.PreviewStylusDown += (sender, args) =>
+            {
+                // Leave touch-tablet stylus events for WPF's Touch promotion.
+                if (args.StylusDevice.TabletDevice.Type == TabletDeviceType.Touch) return;
+                if (!BeginTitleDrag(handle, args.OriginalSource,
+                    PointToScreen(args.GetPosition(this)))) return;
+                titleDragStylus = args.StylusDevice;
+                if (!args.StylusDevice.Capture(handle)) { EndTitleDrag(); return; }
+                args.Handled = true;
+            };
+            handle.PreviewStylusMove += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragStylus != args.StylusDevice) return;
+                MoveTitleDrag(PointToScreen(args.GetPosition(this)));
+                args.Handled = true;
+            };
+            handle.PreviewStylusUp += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragStylus != args.StylusDevice) return;
+                MoveTitleDrag(PointToScreen(args.GetPosition(this)));
+                EndTitleDrag();
+                args.Handled = true;
+            };
+            handle.LostStylusCapture += (sender, args) =>
+            {
+                if (titleDragStylus == args.StylusDevice) EndTitleDrag();
+            };
+            handle.PreviewMouseLeftButtonDown += (sender, args) =>
+            {
+                if (titleDrag.IsActive) { args.Handled = true; return; }
+                if (args.ClickCount != 1 || !BeginTitleDrag(handle, args.OriginalSource,
+                    PointToScreen(args.GetPosition(this)))) return;
+                if (!handle.CaptureMouse()) { EndTitleDrag(); return; }
+                args.Handled = true;
+            };
+            handle.PreviewMouseMove += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragTouch != null || titleDragStylus != null) return;
+                if (args.LeftButton != MouseButtonState.Pressed) { EndTitleDrag(); return; }
+                MoveTitleDrag(PointToScreen(args.GetPosition(this)));
+                args.Handled = true;
+            };
+            handle.PreviewMouseLeftButtonUp += (sender, args) =>
+            {
+                if (!titleDrag.IsActive || titleDragTouch != null || titleDragStylus != null) return;
+                MoveTitleDrag(PointToScreen(args.GetPosition(this)));
+                EndTitleDrag();
+                args.Handled = true;
+            };
+            handle.LostMouseCapture += (sender, args) =>
+            {
+                if (titleDragTouch == null && titleDragStylus == null) EndTitleDrag();
+            };
+        }
+
+        private bool BeginTitleDrag(FrameworkElement handle, object originalSource, Point screenPoint)
+        {
+            if (originalSource is DependencyObject source && FindVisualParent<Button>(source) != null)
+                return false;
+            if (windowHandle == IntPtr.Zero || !NativeMethods.GetWindowRect(windowHandle, out var bounds) ||
+                !titleDrag.Begin(bounds, screenPoint)) return false;
+            titleDragHandle = handle;
+            return true;
+        }
+
+        private void MoveTitleDrag(Point screenPoint)
+        {
+            if (!titleDrag.TryGetPosition(screenPoint, out var left, out var top)) return;
+            NativeMethods.SetWindowPos(windowHandle, IntPtr.Zero, left, top, 0, 0,
+                NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+        }
+
+        private void EndTitleDrag()
+        {
+            if (!titleDrag.IsActive) return;
+            var handle = titleDragHandle;
+            var touch = titleDragTouch;
+            var stylus = titleDragStylus;
+            titleDrag.End();
+            titleDragHandle = null;
+            titleDragTouch = null;
+            titleDragStylus = null;
+            // Clear state first: releasing capture also raises capture-loss events.
+            if (touch != null && touch.Captured == handle) handle.ReleaseTouchCapture(touch);
+            if (stylus != null && stylus.Captured == handle) stylus.Capture(null);
+            if (handle?.IsMouseCaptured == true) handle.ReleaseMouseCapture();
         }
 
         private void ApplyWindowRegion()
@@ -362,6 +490,103 @@ namespace TouchZoomBoard
                 current = VisualTreeHelper.GetParent(current);
             }
             return null;
+        }
+
+        private UIElement CreateToolOrderPage()
+        {
+            var page = new StackPanel { Margin = new Thickness(10) };
+            page.Children.Add(new TextBlock
+            {
+                Text = "도구를 선택한 뒤 위로·아래로 이동하세요. 앞에서부터 3개씩 한 페이지에 표시됩니다. 자주 쓰는 펜·지우개·되돌리기를 같은 페이지로 모을 수 있습니다. 색상 버튼은 해당 도구와 함께 이동합니다.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = LiquidGlassTheme.SecondaryTextBrush,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+            toolOrderListBox = new ListBox
+            {
+                Height = 286,
+                Background = Brushes.Transparent,
+                Foreground = LiquidGlassTheme.PrimaryTextBrush,
+                BorderThickness = new Thickness(0),
+                FontSize = 14,
+                SelectionMode = SelectionMode.Single
+            };
+            ScrollViewer.SetHorizontalScrollBarVisibility(toolOrderListBox, ScrollBarVisibility.Disabled);
+            toolOrderListBox.SelectionChanged += (sender, args) => UpdateToolOrderButtons();
+            page.Children.Add(toolOrderListBox);
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            toolUpButton = CreateButton("위로 ↑", false);
+            toolDownButton = CreateButton("아래로 ↓", false);
+            var reset = CreateButton("기본 순서", false);
+            toolUpButton.Click += (sender, args) => MoveToolOrder(-1);
+            toolDownButton.Click += (sender, args) => MoveToolOrder(1);
+            reset.Click += (sender, args) =>
+            {
+                editableToolOrder.Clear();
+                editableToolOrder.AddRange(PanelToolLayout.DefaultOrder);
+                RefreshToolOrderList(0);
+            };
+            actions.Children.Add(toolUpButton);
+            actions.Children.Add(toolDownButton);
+            actions.Children.Add(reset);
+            page.Children.Add(actions);
+            RefreshToolOrderList(0);
+            return page;
+        }
+
+        private void MoveToolOrder(int direction)
+        {
+            var index = toolOrderListBox.SelectedIndex;
+            var destination = index + direction;
+            if (index < 0 || destination < 0 || destination >= editableToolOrder.Count) return;
+            var item = editableToolOrder[index];
+            editableToolOrder.RemoveAt(index);
+            editableToolOrder.Insert(destination, item);
+            RefreshToolOrderList(destination);
+        }
+
+        private void RefreshToolOrderList(int selectedIndex)
+        {
+            toolOrderListBox.Items.Clear();
+            for (var index = 0; index < editableToolOrder.Count; index++)
+            {
+                var item = editableToolOrder[index];
+                var row = new Grid { IsHitTestVisible = false };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var icon = ControlPanelWindow.CreateToolOrderIcon(item, settings.LastShapeMode);
+                row.Children.Add(new Border
+                {
+                    Child = icon,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                var label = new TextBlock
+                {
+                    Text = string.Format("{0}페이지 · {1}번째    {2}", index / 3 + 1, index % 3 + 1, PanelToolLayout.Title(item)),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(label, 1);
+                row.Children.Add(label);
+                toolOrderListBox.Items.Add(new ListBoxItem
+                {
+                    Content = row,
+                    Tag = item,
+                    Padding = new Thickness(8, 5, 8, 5),
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    FontWeight = FontWeights.Normal
+                });
+            }
+            toolOrderListBox.SelectedIndex = selectedIndex;
+            UpdateToolOrderButtons();
+        }
+
+        private void UpdateToolOrderButtons()
+        {
+            if (toolUpButton == null || toolDownButton == null) return;
+            var index = toolOrderListBox.SelectedIndex;
+            toolUpButton.IsEnabled = index > 0;
+            toolDownButton.IsEnabled = index >= 0 && index < editableToolOrder.Count - 1;
         }
 
         private static ScrollViewer CreateHelpPage()
@@ -1147,6 +1372,7 @@ namespace TouchZoomBoard
                 opacitySlider.Value / 100.0;
             settings.DefaultZoom = zoomSlider.Value / 100.0;
             settings.TooltipsEnabled = tooltipsCheckBox.IsChecked == true;
+            settings.ToolOrder = PanelToolLayout.Normalize(editableToolOrder);
 
             var startupEnabled = startupCheckBox.IsChecked == true;
             if (!settings.SetStartWithWindows(startupEnabled))
