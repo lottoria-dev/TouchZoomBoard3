@@ -3,7 +3,7 @@ name: Build Release
 on:
   push:
     tags:
-      - "v3.0.7"
+      - "v3.0.8"
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          if ($version -ne '3.0.7') {
+          if ($version -ne '3.0.8') {
             throw "지원하지 않는 릴리스 태그입니다: $version"
           }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -43,6 +43,7 @@ jobs:
             dist/TouchZoomBoard3.exe
             dist/TouchZoomBoard3_${{ steps.version.outputs.version }}_Windows_x64.zip
             dist/TouchZoomBoard3_${{ steps.version.outputs.version }}_SHA256.txt
+            dist/CHANGELOG.md
           if-no-files-found: error
 
       - name: Create GitHub Release draft
@@ -56,6 +57,7 @@ jobs:
             'dist/TouchZoomBoard3.exe',
             "dist/TouchZoomBoard3_${version}_Windows_x64.zip",
             "dist/TouchZoomBoard3_${version}_SHA256.txt",
+            'dist/CHANGELOG.md',
             '--draft', '--verify-tag',
             '--title', "TouchZoomBoard3 $version",
             '--notes-file', 'RELEASE_NOTES.md'

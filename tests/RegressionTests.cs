@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Windows;
@@ -54,6 +56,11 @@ namespace TouchZoomBoard
                 Run("Batched samples, timestamp rollover and lag bounds", InkPacketTimingAndBounds);
                 Run("Settings drag uses screen pixels without drift and ends cleanly", SettingsScreenDrag);
                 Run("Order icons match live panel vectors and survive reordering", ToolOrderIconsMatchPanel);
+                Run("Repeated Down/Move/Up reuse output without changing state", InkReplayPacketsAreIdempotent);
+                Run("Historical coalesced batches cannot reshape subsequent ink", InkHistoricalBatchesReuseOutput);
+                Run("Late and foreign input cannot reopen or finish another contact", InkLatePacketsStayWithOriginalContact);
+                Run("Replay handles tick rollover and cancels obsolete geometry", InkReplayRolloverAndCancellation);
+                Run("Replay caches stay bounded without dropping input samples", InkReplayCacheIsBounded);
                 Console.WriteLine("PASS: " + passed + " regression groups");
                 return 0;
             }
@@ -911,6 +918,205 @@ namespace TouchZoomBoard
                 }
             }
         }
+
+        private static AdaptiveStylusFilter ReplayFilter()
+        {
+            return new AdaptiveStylusFilter { FilteringEnabled = true };
+        }
+
+        private static StylusPointCollection InkPoints(params double[] coordinates)
+        {
+            var points = new StylusPointCollection();
+            for (int index = 0; index < coordinates.Length; index += 2)
+                points.Add(new StylusPoint(coordinates[index], coordinates[index + 1], 0.5f));
+            return points;
+        }
+
+        private static double[] LiveFilterState(AdaptiveStylusFilter filter)
+        {
+            return new[]
+            {
+                (double)Field<int>(filter, "lastPacketInputTimestamp"),
+                (double)Field<int>(filter, "packetCount"), (double)Field<int>(filter, "pointCount"),
+                Field<double>(filter, "filteredX"), Field<double>(filter, "filteredY"),
+                Field<double>(filter, "filteredVelocityX"), Field<double>(filter, "filteredVelocityY"),
+                Field<double>(filter, "previousRawX"), Field<double>(filter, "previousRawY")
+            };
+        }
+
+        private static void InkReplayPacketsAreIdempotent()
+        {
+            var filter = ReplayFilter();
+            var down = InkPoints(10, 20);
+            filter.ProcessInputPacket("down", 7, 11, 1000, down);
+            var move = InkPoints(20, 30, 35, 40);
+            filter.ProcessInputPacket("move", 7, 11, 1016, move);
+            var state = LiveFilterState(filter);
+            var repeatedDown = InkPoints(10, 20);
+            var result = filter.ProcessInputPacket("down", 7, 11, 1000, repeatedDown);
+            Check(!result.StateAdvanced && result.CachedPoints == 1, "Repeated Down reset live filter");
+            SameInk(down, repeatedDown, "Repeated Down changed coordinates");
+            var repeatedMove = InkPoints(20, 30, 35, 40);
+            result = filter.ProcessInputPacket("move", 7, 11, 1016, repeatedMove);
+            Check(!result.StateAdvanced && result.CachedPoints == 2, "Repeated Move was filtered twice");
+            SameInk(move, repeatedMove, "Repeated Move changed coordinates");
+            Check(state.SequenceEqual(LiveFilterState(filter)), "Replay altered live velocity/position/time");
+            var up = InkPoints(40, 50);
+            result = filter.ProcessInputPacket("up", 7, 11, 1032, up);
+            Check(result.StrokeCompleted && !Field<bool>(filter, "active"), "Up did not close the stroke");
+            var repeatedUp = InkPoints(40, 50);
+            result = filter.ProcessInputPacket("up", 7, 11, 1032, repeatedUp);
+            SameInk(up, repeatedUp, "Repeated Up changed the endpoint");
+            Check(!result.StrokeCompleted && !result.StateAdvanced, "Repeated Up completed twice");
+            InkStrokeDiagnostic diagnostic;
+            Check(filter.TryTakeCompleted(out diagnostic) && !filter.TryTakeCompleted(out diagnostic),
+                "Exactly one completion was expected");
+            // Same location in a genuinely later Down is a new contact.
+            result = filter.ProcessInputPacket("down", 7, 11, 1100, InkPoints(10, 20));
+            Check(result.StateAdvanced && Field<int>(filter, "packetCount") == 1, "New Down was mistaken for a replay");
+        }
+
+        private static void InkHistoricalBatchesReuseOutput()
+        {
+            var reference = ReplayFilter();
+            var filter = ReplayFilter();
+            var history = new StylusPointCollection();
+            for (int index = 0; index < 18; index++)
+            {
+                var phase = index * 0.1;
+                var raw = InkPoints(300 + 60 * Math.Cos(phase), 200 + 50 * Math.Sin(phase));
+                var expected = raw.Clone();
+                reference.ProcessInputPacket(index == 0 ? "down" : "move", 7, 11, 1000 + index * 10, expected);
+                filter.ProcessInputPacket(index == 0 ? "down" : "move", 7, 11, 1000 + index * 10, raw);
+                SameInk(expected, raw, "Forward input differed before replay");
+                if (index >= 6 && index <= 16) history.Add(raw[0]);
+            }
+            var liveState = LiveFilterState(filter);
+            var batch = new StylusPointCollection();
+            for (int index = 6; index <= 16; index++)
+                batch.Add(new StylusPoint(300 + 60 * Math.Cos(index * 0.1), 200 + 50 * Math.Sin(index * 0.1), 0.5f));
+            var result = filter.ProcessInputPacket("move", 7, 11, 1060, batch);
+            Check(result.InputGapMilliseconds == -110 && result.CachedPoints == batch.Count,
+                "110 ms historical batch was not recognized");
+            SameInk(history, batch, "Coalesced replay did not reuse original geometry");
+            Check(liveState.SequenceEqual(LiveFilterState(filter)), "Historical batch rewound the filter");
+            var next = InkPoints(285, 252, 277, 257);
+            var expectedNext = next.Clone();
+            filter.ProcessInputPacket("move", 7, 11, 1180, next);
+            reference.ProcessInputPacket("move", 7, 11, 1180, expectedNext);
+            SameInk(expectedNext, next, "Replay reshaped subsequent forward ink");
+            // Unknown historical samples and their pressure remain present.
+            var unknown = new StylusPointCollection(new[] { new StylusPoint(900, 800, 0.8f) });
+            var original = unknown.Clone();
+            liveState = LiveFilterState(filter);
+            result = filter.ProcessInputPacket("move", 7, 11, 1065, unknown);
+            SameInk(original, unknown, "Unknown historical sample was discarded or modified");
+            Check(result.PassthroughPoints == 1 && liveState.SequenceEqual(LiveFilterState(filter)),
+                "Unknown historical sample changed current state");
+            // Fresh samples may share a timestamp, without being duplicates.
+            result = filter.ProcessInputPacket("move", 7, 11, 1180, InkPoints(260, 270));
+            Check(result.StateAdvanced, "Fresh same-timestamp samples were dropped");
+        }
+
+        private static void InkLatePacketsStayWithOriginalContact()
+        {
+            var filter = ReplayFilter();
+            filter.ProcessInputPacket("down", 7, 11, 1000, InkPoints(10, 20));
+            var firstMove = InkPoints(25, 40);
+            filter.ProcessInputPacket("move", 7, 11, 1016, firstMove);
+            filter.ProcessInputPacket("up", 7, 11, 1032, InkPoints(35, 45));
+            var state = LiveFilterState(filter);
+            var late = InkPoints(25, 40);
+            var result = filter.ProcessInputPacket("move", 7, 11, 1016, late);
+            SameInk(firstMove, late, "Late Move changed the completed stroke's geometry");
+            Check(!Field<bool>(filter, "active") && state.SequenceEqual(LiveFilterState(filter)),
+                "Late Move reopened the completed stroke");
+            filter.ProcessInputPacket("down", 7, 11, 1100, InkPoints(400, 300));
+            state = LiveFilterState(filter);
+            // Same device ID is intentionally reused for a later touch contact.
+            result = filter.ProcessInputPacket("up", 7, 11, 1032, InkPoints(35, 45));
+            Check(!result.StrokeCompleted && state.SequenceEqual(LiveFilterState(filter)) && Field<bool>(filter, "active"),
+                "Old Up finished a new contact with the same device ID");
+            result = filter.ProcessInputPacket("move", 8, 12, 1116, InkPoints(600, 600));
+            Check(!result.StateAdvanced && state.SequenceEqual(LiveFilterState(filter)), "Foreign device altered live state");
+            result = filter.ProcessInputPacket("up", 8, 12, 1132, InkPoints(610, 610));
+            Check(!result.StrokeCompleted && Field<bool>(filter, "active"), "Foreign Up closed live contact");
+            // A first real Up with a backward time still closes, without rewinding.
+            filter.ProcessInputPacket("move", 7, 11, 1140, InkPoints(420, 320));
+            state = LiveFilterState(filter);
+            result = filter.ProcessInputPacket("up", 7, 11, 1132, InkPoints(419, 319));
+            Check(result.StrokeCompleted && !result.StateAdvanced && !Field<bool>(filter, "active") &&
+                state.SequenceEqual(LiveFilterState(filter)), "Backward Up did not close safely");
+        }
+
+        private static void InkReplayRolloverAndCancellation()
+        {
+            var filter = ReplayFilter();
+            int start = int.MaxValue - 10;
+            filter.ProcessInputPacket("down", 7, 11, start, InkPoints(10, 20));
+            var move = InkPoints(20, 30);
+            var result = filter.ProcessInputPacket("move", 7, 11, unchecked(start + 16), move);
+            Check(result.StateAdvanced && result.InputGapMilliseconds == 16, "Tick rollover was mistaken for reverse input");
+            var state = LiveFilterState(filter);
+            var old = InkPoints(10, 20);
+            result = filter.ProcessInputPacket("move", 7, 11, start, old);
+            Check(!result.StateAdvanced && result.InputGapMilliseconds == -16 &&
+                state.SequenceEqual(LiveFilterState(filter)), "Historical input crossed the rollover incorrectly");
+            filter.RequestCancel("test-coordinate-change");
+            var fresh = InkPoints(20, 30);
+            var original = fresh.Clone();
+            result = filter.ProcessInputPacket("move", 7, 11, unchecked(start + 16), fresh);
+            SameInk(original, fresh, "Cancellation reused obsolete geometry");
+            Check(!result.StateAdvanced && !Field<bool>(filter, "active"), "Cancellation reopened old contact");
+            result = filter.ProcessInputPacket("down", 7, 11, unchecked(start + 100), InkPoints(80, 90));
+            Check(result.StateAdvanced && Field<bool>(filter, "active"), "New Down failed after cancellation");
+            filter.FilteringEnabled = false;
+            fresh = InkPoints(90, 100);
+            original = fresh.Clone();
+            result = filter.ProcessInputPacket("move", 7, 11, unchecked(start + 116), fresh);
+            SameInk(original, fresh, "Disabled filtering modified input");
+            Check(result.Disposition == "filter-disabled" && !Field<bool>(filter, "active"), "Disabled filtering retained live state");
+        }
+
+        private static void InkReplayCacheIsBounded()
+        {
+            var filter = ReplayFilter();
+            for (int stroke = 0; stroke < 9; stroke++)
+            {
+                int timestamp = 1000 + stroke * 100;
+                filter.ProcessInputPacket("down", 7, 11, timestamp, InkPoints(10, 20));
+                filter.ProcessInputPacket("up", 7, 11, timestamp + 16, InkPoints(20, 30));
+            }
+            Check(Field<System.Collections.ICollection>(filter, "replayHistories").Count == 4,
+                "Completed stroke histories grew without a bound");
+            filter.ProcessInputPacket("down", 7, 11, 3000, InkPoints(0, 0));
+            for (int packet = 1; packet <= 300; packet++)
+            {
+                var points = new StylusPointCollection();
+                for (int sample = 0; sample < 40; sample++)
+                    points.Add(new StylusPoint(packet * 40 + sample, 50 + sample, 0.5f));
+                var result = filter.ProcessInputPacket("move", 7, 11, 3000 + packet * 8, points);
+                Check(points.Count == 40 && result.StateAdvanced, "Cache bound dropped a fresh sample");
+            }
+            var history = Field<object>(filter, "currentHistory");
+            Check(Field<System.Collections.ICollection>(history, "sampleOrder").Count <= 8192,
+                "Sample cache grew without a bound");
+            Check(Field<System.Collections.ICollection>(history, "packets").Count <= 256,
+                "Packet cache grew without a bound");
+            var expired = InkPoints(40, 50);
+            var expected = expired.Clone();
+            var state = LiveFilterState(filter);
+            var replay = filter.ProcessInputPacket("move", 7, 11, 3008, expired);
+            SameInk(expected, expired, "Expired cached sample was lost");
+            Check(replay.PassthroughPoints == 1 && state.SequenceEqual(LiveFilterState(filter)),
+                "Expired replay rewound the state");
+        }
+
+        
+
+        
+
+        
 
         private static bool FindCenteredGrid(DependencyObject root)
         {

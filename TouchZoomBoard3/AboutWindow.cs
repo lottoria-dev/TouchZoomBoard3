@@ -33,7 +33,7 @@ namespace TouchZoomBoard
             var root = new StackPanel();
             root.Children.Add(new TextBlock
             {
-                Text = "TouchZoomBoard3 3.0.7",
+                Text = "TouchZoomBoard3 3.0.8",
                 FontSize = 22,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 6)

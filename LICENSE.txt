@@ -1,7 +1,7 @@
 SOFTWARE LICENSE AGREEMENT
 
 Product Name: TouchZoomBoard3
-Product Version: 3.0.7
+Product Version: 3.0.8
 License Type: Source-available Freeware License
 
 Copyright (c) 2026 lottoria-dev. All rights reserved.

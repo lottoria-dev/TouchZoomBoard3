@@ -1,4 +1,4 @@
-# TouchZoomBoard3 3.0.7
+# TouchZoomBoard3 3.0.8
 
 전자칠판 앞에서 화면 확대·자료 조작·판서를 직접 사용하는 Windows 수업 보조 프로그램입니다. 설치 프로그램 없이 압축을 풀어 실행합니다.
 
@@ -6,13 +6,15 @@
 - 공식 저장소: <https://github.com/lottoria-dev/TouchZoomBoard3>
 - 문의: <mathtime.ai@gmail.com>
 
-## 3.0.7의 변경
+## 3.0.8의 변경
 
-- 확대 중 환경 설정창을 끌 때 따라다니던 사각 잔상을 보정했습니다. 마우스·터치·펜으로 제목 표시줄을 끌어 이동할 수 있습니다.
-- 환경 설정창 배경의 불투명도를 기존 값 대비 15% 높여 글자와 설정 항목을 더 쉽게 구분할 수 있도록 했습니다. 둥근 모서리 바깥은 투명하게 유지합니다.
-- **도구 순서** 목록에 실제 패널과 같은 벡터 아이콘을 표시합니다. 도형 항목은 마지막 도형을 표시하며, 아이콘·이름·페이지 위치가 함께 이동합니다.
+- 전자칠판 확대 필기에서 중복·역순으로 들어오는 터치 입력에 기존 보정 좌표를 재사용해 곡선과 글자 형태의 왜곡을 줄였습니다.
+- 펜을 뗀 뒤 늦게 오는 이동 입력이 새 획을 만들거나 이전 획의 종료 입력이 다음 획을 끝내지 않도록 했습니다.
+- 점의 개수와 압력을 유지하며, 알 수 없는 과거 점도 원본 그대로 전달합니다.
+- 임시 진단 파일 기록 기능을 제거하고 로그 파일을 만들지 않는 정식판으로 정리했습니다.
+- **[버전 히스토리](CHANGELOG.md)**를 저장소와 사용자용 ZIP, GitHub Release 첨부 파일에 함께 제공합니다.
 
-검토본의 정상 작동을 개발자가 확인한 뒤 정식 3.0.7로 전환했습니다. 아이콘 선 굵기·툴팁·축소 패널 가운데 정렬과 기존 필기·되돌리기·포커스 보정을 유지합니다.
+개발자의 전자칠판 시험에서 개선이 보고됐고 100~500% 시험 로그의 28개 획에서 저장 좌표가 보정 좌표와 순서까지 일치했습니다. 기존 수작업 아이콘·툴팁·축소 패널 가운데 정렬과 환경 설정창 이동·불투명도·도구 순서 표시를 유지합니다.
 
 ## 주요 기능
 
@@ -21,7 +23,7 @@
 - 펜·형광펜·지우개, 사각형·타원·원·선분·화살표 판서
 - 원의 중심을 누른 채 끌어 반지름을 정하는 원 도구
 - 지우개 삭제와 전체 지움의 되돌리기, 원래 색·굵기·겹침 순서 복원
-- 입력 발생 시각을 사용하는 `adaptive-v9` 필기 보정과 확대 배율에 따른 왜곡 억제
+- 입력 발생 시각을 사용하는 중복·역순 입력을 재사용하는 `adaptive-v10-replay-safe` 필기 보정
 - 색상 선택 시 해당 도구 자동 활성화, 마지막 도형 기억·기본 선분
 - 도구 순서를 바꿔 자주 쓰는 도구를 한 페이지에 모으는 설정
 - 패널 유리판 농도·파스텔 굴절광·사용자 지정 색상
@@ -32,7 +34,7 @@
 
 Windows 10 22H2 또는 Windows 11 x64와 .NET Framework 4.8 이상이 필요합니다.
 
-1. [공식 Release](https://github.com/lottoria-dev/TouchZoomBoard3/releases/tag/v3.0.7)에서 `TouchZoomBoard3_3.0.7_Windows_x64.zip`을 내려받습니다.
+1. [공식 Release](https://github.com/lottoria-dev/TouchZoomBoard3/releases/tag/v3.0.8)에서 `TouchZoomBoard3_3.0.8_Windows_x64.zip`을 내려받습니다.
 2. 기존 프로그램을 종료하고 새 폴더에 ZIP을 완전히 압축 해제합니다.
 3. `TouchZoomBoard3.exe`를 실행하고 작은 패널을 눌러 전체 패널을 엽니다.
 4. 상단 배율 버튼을 짧게 눌러 기본 배율로 확대합니다. 길게 누르면 100~500% 배율 목록이 열립니다.
@@ -59,19 +61,20 @@ Windows 10 22H2 또는 Windows 11 x64와 .NET Framework 4.8 이상이 필요합�
 
 이 저장소는 .NET Framework 4.8 WPF와 C# 7.3을 사용합니다. Visual Studio 또는 Build Tools에 `.NET 데스크톱 개발` 워크로드와 .NET Framework 4.8 SDK/Targeting Pack을 설치합니다. C/C++ 워크로드와 외부 NuGet 패키지는 필요하지 않습니다.
 
-`TouchZoomBoard3.sln`을 `Release / x64`로 빌드하거나 루트의 `build_release.bat`을 실행합니다. BAT는 앱과 Windows WPF 회귀 테스트 31개 그룹을 빌드·실행하며, 통과하면 `dist`에 다음 파일을 만듭니다.
+`TouchZoomBoard3.sln`을 `Release / x64`로 빌드하거나 루트의 `build_release.bat`을 실행합니다. BAT는 앱과 Windows WPF 회귀 테스트 36개 그룹을 빌드·실행하며, 통과하면 `dist`에 다음 파일을 만듭니다.
 
 - `TouchZoomBoard3.exe`
-- `TouchZoomBoard3_3.0.7_Windows_x64.zip`
-- `TouchZoomBoard3_3.0.7_SHA256.txt`
+- `TouchZoomBoard3_3.0.8_Windows_x64.zip`
+- `TouchZoomBoard3_3.0.8_SHA256.txt`
+- `CHANGELOG.md` (Release 첨부용 버전 히스토리; 사용자 ZIP에도 포함)
 
-GitHub Release 태그는 **`v3.0.7`**입니다. 업로드·자동 빌드·Release 게시 방법은 [BUILD.md](https://github.com/lottoria-dev/TouchZoomBoard3/blob/main/BUILD.md)를 참고합니다. 홈페이지는 Release를 게시한 뒤 갱신합니다.
+GitHub Release 태그는 **`v3.0.8`**입니다. 업로드·자동 빌드·Release 게시 방법은 [BUILD.md](https://github.com/lottoria-dev/TouchZoomBoard3/blob/main/BUILD.md)를 참고합니다. 홈페이지는 Release를 게시한 뒤 갱신합니다.
 
 ## 개인정보와 라이선스
 
 프로그램 기능을 위해 인터넷 연결을 사용하지 않으며, 화면 내용·수업 자료·필기 좌표·사용 통계를 수집하거나 전송하지 않습니다. 로그 파일도 만들지 않습니다.
 
-이 프로그램은 OSI 오픈소스 라이선스가 아닌 **source-available freeware**입니다. 사용·수정·재배포 조건은 [LICENSE.txt](LICENSE.txt)를 따릅니다. 관련 문서: [PRIVACY.md](PRIVACY.md), [DEPENDENCIES.md](DEPENDENCIES.md), [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), [SUPPORT.md](SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md).
+이 프로그램은 OSI 오픈소스 라이선스가 아닌 **source-available freeware**입니다. 사용·수정·재배포 조건은 [LICENSE.txt](LICENSE.txt)를 따릅니다. 관련 문서: [PRIVACY.md](PRIVACY.md), [DEPENDENCIES.md](DEPENDENCIES.md), [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), [SUPPORT.md](SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## 개발 과정의 AI 활용
 

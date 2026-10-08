@@ -1,10 +1,10 @@
 ﻿param(
-    [string]$Version = "3.0.7"
+    [string]$Version = "3.0.8"
 )
 
 $ErrorActionPreference = "Stop"
-if ($Version -ne '3.0.7') {
-    throw "정식 배포 버전은 3.0.7여야 합니다: $Version"
+if ($Version -ne '3.0.8') {
+    throw "정식 배포 버전은 3.0.8여야 합니다: $Version"
 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $solution = Join-Path $root "TouchZoomBoard3.sln"
@@ -43,7 +43,7 @@ $config = Join-Path $projectOutput "TouchZoomBoard3.exe.config"
 if (!(Test-Path $exe)) { throw "빌드 결과 파일을 찾지 못했습니다: $exe" }
 if (!(Test-Path $config)) { throw "설정 파일을 찾지 못했습니다: $config" }
 
-Write-Host "[TEST] Windows WPF 회귀 테스트 빌드 및 실행"
+Write-Host "[TEST] Windows WPF 회귀 테스트 36개 그룹 빌드 및 실행"
 $testProject = Join-Path $root "tests\TouchZoomBoard3.RegressionTests.csproj"
 & $msbuild $testProject /t:Rebuild /p:Configuration=Release /p:Platform=x64 /m /nologo
 if ($LASTEXITCODE -ne 0) { throw "회귀 테스트 빌드 실패: $LASTEXITCODE" }
@@ -51,7 +51,9 @@ if ($LASTEXITCODE -ne 0) { throw "회귀 테스트 빌드 실패: $LASTEXITCODE"
 if ($LASTEXITCODE -ne 0) { throw "회귀 테스트 실패: $LASTEXITCODE" }
 
 Write-Host "[2/5] 배포 폴더 준비"
-if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
+# Keep other versions in dist; replace only this version's generated package.
+if (Test-Path $packageDir) { Remove-Item $packageDir -Recurse -Force }
+if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 New-Item $packageDir -ItemType Directory -Force | Out-Null
 
 $packageFiles = @(
@@ -63,10 +65,12 @@ $packageFiles = @(
     (Join-Path $root "DEPENDENCIES.md"),
     (Join-Path $root "THIRD_PARTY_NOTICES.txt"),
     (Join-Path $root "SUPPORT.md"),
-    (Join-Path $root "RELEASE_NOTES.md")
+    (Join-Path $root "RELEASE_NOTES.md"),
+    (Join-Path $root "CHANGELOG.md")
 )
 foreach ($file in $packageFiles) { Copy-Item $file $packageDir -Force }
 Copy-Item $exe (Join-Path $dist "TouchZoomBoard3.exe") -Force
+Copy-Item (Join-Path $root "CHANGELOG.md") (Join-Path $dist "CHANGELOG.md") -Force
 
 $forbidden = Get-ChildItem $packageDir -Recurse -File | Where-Object {
     $_.Extension -in @('.pdb', '.cs', '.log') -or
@@ -92,3 +96,4 @@ Write-Host "[5/5] 완료"
 Write-Host "실행 파일 : $(Join-Path $dist 'TouchZoomBoard3.exe')"
 Write-Host "배포 ZIP  : $zipPath"
 Write-Host "SHA-256   : $checksumPath"
+Write-Host "버전 이력 : $(Join-Path $dist 'CHANGELOG.md')"

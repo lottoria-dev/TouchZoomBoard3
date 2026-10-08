@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  PACKAGE_VERSION: 3.0.7
+  PACKAGE_VERSION: 3.0.8
 
 jobs:
   build-windows-x64:
@@ -38,4 +38,5 @@ jobs:
             dist/TouchZoomBoard3.exe
             dist/TouchZoomBoard3_${{ env.PACKAGE_VERSION }}_Windows_x64.zip
             dist/TouchZoomBoard3_${{ env.PACKAGE_VERSION }}_SHA256.txt
+            dist/CHANGELOG.md
           if-no-files-found: error

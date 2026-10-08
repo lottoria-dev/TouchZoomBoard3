@@ -137,7 +137,7 @@ namespace TouchZoomBoard
                     DebugLog.WriteInkDiagnostic("INK-STROKE", "mode=" + mode +
                         ", zoom=" + diagnosticZoom.ToString("0.000") +
                         ", dpiScale=" + diagnosticDpiScale.ToString("0.000") +
-                        ", filter=adaptive-v9, " + diagnostic.ToLogText());
+                        ", filter=adaptive-v10-replay-safe, " + diagnostic.ToLogText());
                 }
                 else
                 {

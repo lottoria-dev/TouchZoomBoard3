@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Windows.Controls;
@@ -45,10 +46,12 @@ namespace TouchZoomBoard
         {
             filter.RequestCancel(reason);
         }
+
     }
 
     internal sealed class InkStrokeDiagnostic
     {
+
         internal int PacketCount { get; set; }
         internal int PointCount { get; set; }
         internal double DurationMilliseconds { get; set; }
@@ -97,6 +100,216 @@ namespace TouchZoomBoard
 
     internal sealed class AdaptiveStylusFilter : StylusPlugIn
     {
+        internal const string FilterRevision = "adaptive-v10-replay-safe";
+        private const int MaximumReplayStrokes = 4;
+        private const int MaximumReplaySamples = 8192;
+        private const int MaximumReplayPackets = 256;
+        private readonly object packetGate = new object();
+        private readonly List<ReplayHistory> replayHistories = new List<ReplayHistory>();
+        private ReplayHistory currentHistory;
+
+        // WPF may deliver a UI-thread coalesced copy after the pen-thread input.
+        // Keep output coordinates, rather than running that copy through the live
+        // velocity/position state again. Only X/Y are restored; pressure and all
+        // other properties of the incoming StylusPoint remain untouched.
+        private struct SampleKey : IEquatable<SampleKey>
+        {
+            private long x;
+            private long y;
+            private float pressure;
+
+            internal SampleKey(StylusPoint point)
+            {
+                // Repeated WPF transforms can differ below a millionth of a DIP.
+                // Quantization is for lookup only; output coordinates are exact.
+                x = (long)Math.Round(point.X * 1000000.0);
+                y = (long)Math.Round(point.Y * 1000000.0);
+                pressure = point.PressureFactor;
+            }
+
+            public bool Equals(SampleKey other) =>
+                x == other.x && y == other.y && pressure.Equals(other.pressure);
+            public override bool Equals(object other) => other is SampleKey && Equals((SampleKey)other);
+            public override int GetHashCode()
+            {
+                unchecked { return ((x.GetHashCode() * 397) ^ y.GetHashCode()) * 397 ^ pressure.GetHashCode(); }
+            }
+        }
+
+        private sealed class ReplaySample
+        {
+            internal SampleKey Key;
+            internal int Timestamp;
+            internal long Ordinal;
+            internal double X;
+            internal double Y;
+        }
+
+        private sealed class ReplayPacket
+        {
+            internal string Action;
+            internal int Timestamp;
+            internal SampleKey[] Keys;
+            internal double[] Coordinates;
+
+            internal bool Matches(string action, int timestamp, StylusPointCollection points)
+            {
+                if (Action != action || Timestamp != timestamp || Keys.Length != points.Count) return false;
+                for (int index = 0; index < points.Count; index++)
+                    if (!Keys[index].Equals(new SampleKey(points[index]))) return false;
+                return true;
+            }
+
+            internal void Apply(StylusPointCollection points)
+            {
+                for (int index = 0; index < points.Count; index++)
+                {
+                    var point = points[index];
+                    point.X = Coordinates[index * 2];
+                    point.Y = Coordinates[index * 2 + 1];
+                    points[index] = point;
+                }
+            }
+        }
+
+        private sealed class ReplayHistory
+        {
+            internal int TabletId;
+            internal int StylusId;
+            internal int DownTimestamp;
+            internal int LastTimestamp;
+            internal int CancellationGeneration;
+            internal AppMode Mode;
+            internal double Width;
+            internal double Zoom;
+            internal int AcceptedPackets;
+            internal bool Closed;
+            private long nextOrdinal;
+            private int cachedPacketSamples;
+            private readonly Dictionary<SampleKey, LinkedList<ReplaySample>> samples =
+                new Dictionary<SampleKey, LinkedList<ReplaySample>>();
+            private readonly Queue<ReplaySample> sampleOrder = new Queue<ReplaySample>();
+            private readonly Queue<ReplayPacket> packets = new Queue<ReplayPacket>();
+            private ReplayPacket downPacket;
+
+            internal bool TryPacket(string action, int timestamp, StylusPointCollection points)
+            {
+                if (downPacket != null && downPacket.Matches(action, timestamp, points))
+                {
+                    downPacket.Apply(points);
+                    return true;
+                }
+                foreach (var packet in packets)
+                {
+                    if (!packet.Matches(action, timestamp, points)) continue;
+                    packet.Apply(points);
+                    return true;
+                }
+                return false;
+            }
+
+            internal void Remember(string action, int timestamp,
+                StylusPointCollection raw, StylusPointCollection filtered)
+            {
+                var packet = new ReplayPacket
+                {
+                    Action = action, Timestamp = timestamp,
+                    Keys = new SampleKey[raw.Count], Coordinates = new double[raw.Count * 2]
+                };
+                for (int index = 0; index < raw.Count; index++)
+                {
+                    var key = new SampleKey(raw[index]);
+                    packet.Keys[index] = key;
+                    packet.Coordinates[index * 2] = filtered[index].X;
+                    packet.Coordinates[index * 2 + 1] = filtered[index].Y;
+                    var sample = new ReplaySample
+                    {
+                        Key = key, Timestamp = timestamp, Ordinal = nextOrdinal++,
+                        X = filtered[index].X, Y = filtered[index].Y
+                    };
+                    LinkedList<ReplaySample> positions;
+                    if (!samples.TryGetValue(key, out positions))
+                    {
+                        positions = new LinkedList<ReplaySample>();
+                        samples.Add(key, positions);
+                    }
+                    positions.AddLast(sample);
+                    sampleOrder.Enqueue(sample);
+                    while (sampleOrder.Count > MaximumReplaySamples)
+                    {
+                        var expired = sampleOrder.Dequeue();
+                        var oldPositions = samples[expired.Key];
+                        oldPositions.RemoveFirst();
+                        if (oldPositions.Count == 0) samples.Remove(expired.Key);
+                    }
+                }
+                // A large packet still reaches InkCanvas intact, but need not be
+                // retained in the bounded exact-packet cache.
+                if (raw.Count <= MaximumReplaySamples)
+                {
+                    if (action == "down") downPacket = packet;
+                    else
+                    {
+                        packets.Enqueue(packet);
+                        cachedPacketSamples += raw.Count;
+                        while (packets.Count > MaximumReplayPackets || cachedPacketSamples > MaximumReplaySamples)
+                            cachedPacketSamples -= packets.Dequeue().Keys.Length;
+                    }
+                }
+                LastTimestamp = timestamp;
+                AcceptedPackets++;
+            }
+
+            internal int ReuseHistoricalPoints(int timestamp, StylusPointCollection points)
+            {
+                int reused = 0;
+                long minimumOrdinal = 0;
+                for (int index = 0; index < points.Count; index++)
+                {
+                    var point = points[index];
+                    LinkedList<ReplaySample> positions;
+                    if (!samples.TryGetValue(new SampleKey(point), out positions)) continue;
+                    ReplaySample match = null;
+                    long closestTime = long.MaxValue;
+                    foreach (var candidate in positions)
+                    {
+                        if (candidate.Ordinal < minimumOrdinal) continue;
+                        // The batch timestamp denotes its start, not the time of
+                        // each sample. Prefer the first chronological occurrence
+                        // at/after it, so repeated crossings of a loop stay separate.
+                        var gap = unchecked(candidate.Timestamp - timestamp);
+                        if (gap >= 0) { match = candidate; break; }
+                        var distance = -(long)gap;
+                        if (distance < closestTime) { closestTime = distance; match = candidate; }
+                    }
+                    if (match == null) continue;
+                    point.X = match.X;
+                    point.Y = match.Y;
+                    points[index] = point;
+                    minimumOrdinal = match.Ordinal + 1;
+                    reused++;
+                }
+                // Unmatched historical points are passed through unchanged.
+                // Never drop samples or rewind the live filter to guess them.
+                return reused;
+            }
+        }
+
+        internal sealed class PacketResult
+        {
+            internal string Disposition;
+            internal int Packet;
+            internal int InputGapMilliseconds;
+            internal int LastAcceptedTimestamp;
+            internal int CachedPoints;
+            internal int PassthroughPoints;
+            internal bool StateAdvanced;
+            internal bool StrokeCompleted;
+            internal AppMode Mode;
+            internal double Width;
+            internal double Zoom;
+        }
+
         // Beta 1의 평균 보정 거리가 7~9 DIP에 달해 손끝보다 선이 늦게 따라왔다.
         // 저속 떨림 억제는 유지하면서 위치 컷오프와 속도 반응을 높여 지연을 줄인다.
         private const double PenMinimumCutoff = 18.0;
@@ -184,92 +397,163 @@ namespace TouchZoomBoard
 
         protected override void OnStylusDown(RawStylusInput input)
         {
-            if (!FilteringEnabled)
-            {
-                if (active) WriteCancellationDiagnostic("filter-disabled-before-stylus-down");
-                active = false;
-                ignoreUntilStylusUp = false;
-                base.OnStylusDown(input);
-                return;
-            }
-            try
-            {
-                // 이전 입력에서 StylusUp을 받지 못했더라도 새 획과 연결하지 않는다.
-                if (!CancelIfRequested() && active)
-                {
-                    WriteCancellationDiagnostic("unexpected-new-stylus-down");
-                    active = false;
-                }
-                ignoreUntilStylusUp = false;
-                ResetStroke();
-                active = true;
-                FilterPacket(input);
-            }
-            catch (Exception exception)
-            {
-                DebugLog.Write("적응형 필기 시작 처리 중 오류가 발생했습니다.", exception);
-            }
+            ProcessRawPacket(input, "down");
             base.OnStylusDown(input);
         }
 
         protected override void OnStylusMove(RawStylusInput input)
         {
-            try
-            {
-                if (CancelIfRequested() || ignoreUntilStylusUp)
-                {
-                    base.OnStylusMove(input);
-                    return;
-                }
-                if (!FilteringEnabled)
-                {
-                    active = false;
-                    base.OnStylusMove(input);
-                    return;
-                }
-                if (!active)
-                {
-                    ResetStroke();
-                    active = true;
-                }
-                FilterPacket(input);
-            }
-            catch (Exception exception)
-            {
-                DebugLog.Write("적응형 필기 이동 처리 중 오류가 발생했습니다.", exception);
-            }
+            ProcessRawPacket(input, "move");
             base.OnStylusMove(input);
         }
 
         protected override void OnStylusUp(RawStylusInput input)
         {
-            try
+            ProcessRawPacket(input, "up");
+            base.OnStylusUp(input);
+        }
+
+        // Kept separate from RawStylusInput so the regression executable can
+        // exercise exactly the production state machine with synthetic packets.
+        internal PacketResult ProcessInputPacket(string action, int tabletId, int stylusId,
+            int inputTimestamp, StylusPointCollection points)
+        {
+            lock (packetGate)
             {
-                if (CancelIfRequested() || ignoreUntilStylusUp)
-                {
-                    active = false;
-                    ignoreUntilStylusUp = false;
-                    base.OnStylusUp(input);
-                    return;
-                }
+                if (action != "down" && action != "move" && action != "up")
+                    throw new ArgumentException("Unknown stylus action", nameof(action));
+                if (points == null || points.Count == 0)
+                    return MakeResult("empty-packet", null, 0, 0, 0, false);
+
+                CancelIfRequested();
                 if (!FilteringEnabled)
                 {
-                    active = false;
-                    base.OnStylusUp(input);
-                    return;
+                    SuspendFiltering(action);
+                    return MakeResult("filter-disabled", null, 0, 0, points.Count, false);
                 }
-                if (active)
+
+                var history = FindReplayHistory(tabletId, stylusId, inputTimestamp);
+                int gap = history == null ? 0 : unchecked(inputTimestamp - history.LastTimestamp);
+                if (history != null && history.TryPacket(action, inputTimestamp, points))
+                    return MakeResult("cached-packet", history, gap, points.Count, 0, false);
+
+                if (action == "down")
                 {
-                    FilterPacket(input, true);
-                    CompleteStroke();
+                    // A replayed Down must not reset an active or completed stroke.
+                    if (history != null && (inputTimestamp == history.DownTimestamp || gap < 0))
+                    {
+                        int reused = history.ReuseHistoricalPoints(inputTimestamp, points);
+                        return MakeResult("historical-down", history, gap, reused, points.Count - reused, false);
+                    }
+                    if (active)
+                    {
+                        WriteCancellationDiagnostic("unexpected-new-stylus-down");
+                        if (currentHistory != null) currentHistory.Closed = true;
+                    }
+                    ignoreUntilStylusUp = false;
+                    ResetStroke();
+                    active = true;
+                    history = new ReplayHistory
+                    {
+                        TabletId = tabletId, StylusId = stylusId,
+                        DownTimestamp = inputTimestamp, LastTimestamp = inputTimestamp,
+                        CancellationGeneration = activeCancellationGeneration,
+                        Mode = activeMode,
+                        Width = activeStrokeWidth, Zoom = activeZoom
+                    };
+                    currentHistory = history;
+                    replayHistories.Add(history);
+                    while (replayHistories.Count > MaximumReplayStrokes) replayHistories.RemoveAt(0);
+                    gap = 0;
                 }
+                else if (history == null || history != currentHistory || history.Closed || !active || ignoreUntilStylusUp)
+                {
+                    // A late Move/Up can reuse the preceding stroke's geometry,
+                    // but can never open a new stroke or finish the current one.
+                    int reused = history == null ? 0 : history.ReuseHistoricalPoints(inputTimestamp, points);
+                    return MakeResult(history == null ? "no-matching-down" : "closed-stroke-replay",
+                        history, gap, reused, points.Count - reused, false);
+                }
+
+                if (gap < 0 || (gap == 0 && history.AcceptedPackets > 0 && action != "down"))
+                {
+                    int reused = history.ReuseHistoricalPoints(inputTimestamp, points);
+                    // A same-timestamp batch may contain new samples. If none
+                    // were seen before, process it normally using the last valid
+                    // interval. A mixed replay stays intact without rewinding.
+                    if (gap < 0 || reused > 0)
+                    {
+                        var result = MakeResult(gap < 0 ? "out-of-order-replay" : "same-time-replay",
+                            history, gap, reused, points.Count - reused, false);
+                        // A first real Up still closes this contact even if the driver
+                        // gives it an older timestamp. Its coordinates do not rewind
+                        // the state; subsequent copies are handled by Closed above.
+                        if (action == "up")
+                        {
+                            CompleteStroke();
+                            history.Closed = true;
+                            result.StrokeCompleted = true;
+                        }
+                        return result;
+                    }
+                }
+
+                var raw = points.Clone();
+                FilterPoints(points, inputTimestamp, action == "up");
+                history.Remember(action, inputTimestamp, raw, points);
+                var accepted = MakeResult("filtered", history, gap, 0, 0, true);
+                if (action == "up")
+                {
+                    CompleteStroke();
+                    history.Closed = true;
+                    accepted.StrokeCompleted = true;
+                }
+                return accepted;
             }
-            catch (Exception exception)
+        }
+
+        private ReplayHistory FindReplayHistory(int tabletId, int stylusId, int timestamp)
+        {
+            int generation = Volatile.Read(ref cancellationGeneration);
+            for (int index = replayHistories.Count - 1; index >= 0; index--)
             {
-                DebugLog.Write("적응형 필기 종료 처리 중 오류가 발생했습니다.", exception);
-                active = false;
+                var history = replayHistories[index];
+                if (history.TabletId == tabletId && history.StylusId == stylusId &&
+                    history.CancellationGeneration == generation &&
+                    unchecked(timestamp - history.DownTimestamp) >= 0)
+                    return history;
             }
-            base.OnStylusUp(input);
+            return null;
+        }
+
+        // Called under packetGate. Non-ink callbacks do not copy or filter points.
+        private void SuspendFiltering(string action)
+        {
+            if (active) WriteCancellationDiagnostic("filter-disabled");
+            active = false;
+            if (currentHistory != null) currentHistory.Closed = true;
+            replayHistories.Clear();
+            currentHistory = null;
+            ignoreUntilStylusUp = action != "up";
+        }
+
+        private PacketResult MakeResult(string disposition, ReplayHistory history,
+            int gap, int cachedPoints, int passthroughPoints, bool stateAdvanced)
+        {
+            return new PacketResult
+            {
+                Disposition = disposition,
+                Packet = history == null ? 0 : history.AcceptedPackets,
+                InputGapMilliseconds = gap,
+                LastAcceptedTimestamp = history == null ? 0 : history.LastTimestamp,
+                CachedPoints = cachedPoints, PassthroughPoints = passthroughPoints,
+                StateAdvanced = stateAdvanced,
+                Mode = history == null ? (AppMode)Volatile.Read(ref configuredMode) : history.Mode,
+                Width = history == null ? BitConverter.Int64BitsToDouble(
+                    Interlocked.Read(ref configuredStrokeWidthBits)) : history.Width,
+                Zoom = history == null ? BitConverter.Int64BitsToDouble(
+                    Interlocked.Read(ref configuredZoomBits)) : history.Zoom
+            };
         }
 
         private void ResetStroke()
@@ -309,12 +593,16 @@ namespace TouchZoomBoard
 
             WriteCancellationDiagnostic(cancellationReason);
             active = false;
+            if (currentHistory != null) currentHistory.Closed = true;
+            replayHistories.Clear();
+            currentHistory = null;
             ignoreUntilStylusUp = true;
             return true;
         }
 
         private void WriteCancellationDiagnostic(string reason)
         {
+
             DebugLog.WriteInkDiagnostic("INK-SESSION",
                 "cancelled=True, reason=" + reason +
                 ", packets=" + packetCount +
@@ -323,12 +611,25 @@ namespace TouchZoomBoard
                 ", zoom=" + activeZoom.ToString("0.000"));
         }
 
-        private void FilterPacket(RawStylusInput input, bool anchorFinalPoint = false)
+        private void ProcessRawPacket(RawStylusInput input, string action)
         {
-            var points = input.GetStylusPoints();
-            if (points == null || points.Count == 0) return;
-            FilterPoints(points, input.Timestamp, anchorFinalPoint);
-            input.SetStylusPoints(points);
+            try
+            {
+                if (!FilteringEnabled)
+                {
+                    lock (packetGate) { CancelIfRequested(); SuspendFiltering(action); }
+                    return;
+                }
+                var points = input.GetStylusPoints();
+                if (points == null || points.Count == 0) return;
+                var result = ProcessInputPacket(action, input.TabletDeviceId, input.StylusDeviceId,
+                    input.Timestamp, points);
+                if (result.StateAdvanced || result.CachedPoints > 0) input.SetStylusPoints(points);
+            }
+            catch (Exception exception)
+            {
+                DebugLog.Write("적응형 필기 입력 처리 중 오류가 발생했습니다.", exception);
+            }
         }
 
         private void FilterPoints(StylusPointCollection points, int inputTimestamp, bool anchorFinalPoint)
@@ -337,9 +638,11 @@ namespace TouchZoomBoard
             var hasPreviousPacket = packetCount > 0;
             // Input timestamps remain stable when magnification delays delivery.
             // Stopwatch measures processing time, not the sampling interval.
-            var measuredPacketSeconds = hasPreviousPacket
-                ? unchecked((uint)(inputTimestamp - lastPacketInputTimestamp)) / 1000.0
-                : 0.0;
+            var signedGap = hasPreviousPacket ? unchecked(inputTimestamp - lastPacketInputTimestamp) : 0;
+            // Signed subtraction handles the 32-bit tick rollover and distinguishes
+            // a historical report from a genuine long sampling interval.
+            if (hasPreviousPacket && signedGap < 0) return;
+            var measuredPacketSeconds = signedGap / 1000.0;
             if (hasPreviousPacket && measuredPacketSeconds > 0.0 && measuredPacketSeconds < 1.0)
             {
                 var intervalMilliseconds = measuredPacketSeconds * 1000.0;
@@ -537,9 +840,10 @@ namespace TouchZoomBoard
                 EndpointResidualCorrection = endpointResidualCorrection,
                 StrokeWidth = activeStrokeWidth,
                 FilterProfile = activeMode == AppMode.Highlighter
-                    ? "highlighter-input-time-v9"
-                    : "pen-input-time-v9"
+                    ? "highlighter-input-replay-safe-v10"
+                    : "pen-input-replay-safe-v10"
             });
+
             active = false;
         }
 
